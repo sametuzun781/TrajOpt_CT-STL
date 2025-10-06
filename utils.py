@@ -1,7 +1,6 @@
-from jax import config, jacfwd, vmap
+from jax import config, jacfwd, vmap, Array
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-from jaxlib.xla_extension import ArrayImpl
 
 import glob
 from PIL import Image
@@ -92,7 +91,7 @@ def print_ite(log_ite_all):
     for key in log_ite_all.keys():
         if type(log_ite_all[key]) == list:
             dum = log_ite_all[key][-1]
-            if isinstance(dum, ArrayImpl):
+            if isinstance(dum, Array):
                 dum = float(dum)
             if isinstance(dum, float):
                 dum = round(dum, 4)

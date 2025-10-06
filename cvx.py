@@ -78,7 +78,7 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
 
     cost = par['w_tr'] * (cp.sum(cp.norm(var['dx'], axis=0)**2) + cp.sum(cp.norm(var['du'], axis=0)**2) + ds_sum) # Trust region
     cost += params['w_con_dyn'] * cp.sum(cp.abs(var['nu'][:12, :]))
-    cost += params['w_con_dyn'] * cp.sum(cp.abs(var['nu'][12, :]))
+    cost += params['w_con_stt'] * cp.sum(cp.abs(var['nu'][12, :]))
 
     lin_dt = par['f_dt_last'] + par['gf_dt_last'] @ cp.vec(var['dx'], order='C')
 
