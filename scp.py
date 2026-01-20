@@ -124,7 +124,7 @@ def scp_noncvx_cost(
             cp_sum = 0.0
             S_S_nl = 0.0
 
-        ptr_cost = w_tr * ( np.linalg.norm(dx, axis=0)**2 + np.linalg.norm(du, axis=0)**2 + cp_sum).sum()
+        ptr_cost = w_tr * ((np.linalg.norm(dx, axis=0)**2 + np.linalg.norm(du, axis=0)**2).sum() + cp_sum.sum())
 
         lcd = params['w_con_dyn'] * np.linalg.norm(nu_new[:12, :].reshape(-1), 1)
         lcd += params['w_con_stt'] * np.linalg.norm(nu_new[12, :].reshape(-1), 1)
@@ -141,7 +141,7 @@ def scp_noncvx_cost(
                                                 lin_ncvx_ct_cost=lin_ncvx_ct_cost,
                                                 params=params)
 
-        lin_cost = lcd + cvx_cost + lin_ncvx_cost
+        lin_cost = lcd + cvx_cost + lin_ncvx_cost + ptr_cost
 
     cost_dict = dict_append(cost_dict, 'ptr_cost', ptr_cost)
     
