@@ -32,6 +32,8 @@ def make_anim(load_from, save_to, duration, fps, anim_format):
                        duration=duration, loop=0)
     
     elif anim_format == 'mp4':
+        import cv2
+
         # Get the list of image frames
         frames = sorted(glob.glob(f"{load_from}/*.png"))
 

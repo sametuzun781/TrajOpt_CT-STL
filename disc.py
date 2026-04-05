@@ -64,7 +64,8 @@ def dxdt(x : np.ndarray,
     elif params['inp_param'] == 'ZOH':
         u = u_0.copy()
 
-    return params['f_func'](x, u)
+    tau = tt + t
+    return params['f_func'](x, u, tau)
 
 def int_dyn(x : np.ndarray,
                        u_0 : np.ndarray,
@@ -107,7 +108,9 @@ def dxdt_jax(x, t, tt, tf, u_k, u_kp1, params):
         u = u_k + (t / tf) * (u_kp1 - u_k)
     elif params['inp_param'] == 'ZOH':
         u = u_k
-    return params['f_func'](x, u)
+    
+    tau = tt + t
+    return params['f_func'](x, u, tau)
 
 def int_mult(X, U, S, params):
 
@@ -175,10 +178,11 @@ def dVdt(V, t, u_0, u_1, S, tt, params):
 
     alpha = 1 - beta
     u = u_0 + beta * (u_1 - u_0)
+    tau = tt + t
 
-    A_subs = S * params['A_func'](x, u)
-    B_subs = S * params['B_func'](x, u)
-    f_subs = params['f_func'](x, u)
+    A_subs = S * params['A_func'](x, u, tau)
+    B_subs = S * params['B_func'](x, u, tau)
+    f_subs = params['f_func'](x, u, tau)
 
     z_t = jnp.where(
         params['free_final_time'],

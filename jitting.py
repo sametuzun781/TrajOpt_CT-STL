@@ -2,6 +2,76 @@ from jax import config, jit, jacfwd, lax
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
+# -------------------------------------------
+# --------------- prox-convex ---------------
+# -------------------------------------------
+def jit_ncvx_cvx_fcn_grad(jax_fcn_cvx, params):
+
+    def f_cvx_fcn(X_last):
+        return jax_fcn_cvx(X_last, params)
+    
+    def f_gf_cvx_fcn(X_last):
+
+        K = params['K']
+        n_x = params['n_x']
+        N_cvx = params['f_cvx_dim']
+
+        f_cvx = f_cvx_fcn(X_last).reshape((K * N_cvx,))
+        gf_cvx = jacfwd(f_cvx_fcn)(X_last).reshape(K * N_cvx, K * n_x) # HERE NOT SURE
+
+        return tuple((f_cvx, gf_cvx))
+    
+    ncvx_cvx_fcn_jitted = jit(f_cvx_fcn).lower(params['X_last']).compile()
+    ncvx_cvx_fcn_grad_jitted = jit(f_gf_cvx_fcn).lower(params['X_last']).compile()
+
+    return ncvx_cvx_fcn_jitted, ncvx_cvx_fcn_grad_jitted
+
+def jit_ncvx_smth_fcn_grad(jax_fcn_smth, params):
+
+    K = params['K']
+    N_cvx = params['f_cvx_dim']
+    N_cons = params['f_comp_dim']
+
+    def f_smth_fcn(y_cvx):
+        return jax_fcn_smth(y_cvx, params)
+    
+    def f_gf_smth_fcn(y_cvx):
+
+        f_smth = f_smth_fcn(y_cvx).reshape((N_cons,))
+        gf_smth = jacfwd(f_smth_fcn)(y_cvx).reshape(N_cons, K * N_cvx) # HERE NOT SURE
+
+        return tuple((f_smth, gf_smth))
+    
+    y_cvx = jnp.zeros(( N_cvx, K ))
+
+    ncvx_smth_fcn_jitted = jit(f_smth_fcn).lower(y_cvx).compile()
+    ncvx_smth_fcn_grad_jitted = jit(f_gf_smth_fcn).lower(y_cvx).compile()
+
+    return ncvx_smth_fcn_jitted, ncvx_smth_fcn_grad_jitted
+
+def jit_ncvx_comp_fcn_grad(jax_fcn_comp, params):
+    def f_comp_fcn(X_last):
+        return jax_fcn_comp(X_last, params)
+    
+    def f_gf_comp_fcn(X_last):
+
+        K = params['K']
+        n_x = params['n_x']
+        N_cons = params['f_comp_dim']
+
+        f_comp = f_comp_fcn(X_last).reshape((N_cons,))
+        gf_comp = jacfwd(f_comp_fcn)(X_last).reshape(N_cons, K * n_x)
+
+        return tuple((f_comp, gf_comp))
+    
+    ncvx_comp_fcn_jitted = jit(f_comp_fcn).lower(params['X_last']).compile()
+    ncvx_comp_fcn_grad_jitted = jit(f_gf_comp_fcn).lower(params['X_last']).compile()
+
+    return ncvx_comp_fcn_jitted, ncvx_comp_fcn_grad_jitted
+# -------------------------------------------
+# --------------- prox-convex ---------------
+# -------------------------------------------
+
 def jit_ncvx_dt_fcn_grad(jax_fcn_dt, params):
     def f_dt_fcn(X_last):
         return jax_fcn_dt(X_last, params)

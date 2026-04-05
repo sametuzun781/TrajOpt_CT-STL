@@ -6,22 +6,26 @@ from utils import dict_append, update_cost_dict, print_ite
 from cvx import solve_parsed_problem
 
 def scp_noncvx_cost(
-    X_new:                  np.ndarray = None,
-    U_new:                  np.ndarray = None,
-    S_new:                  np.ndarray = None,
-    X_last:                 np.ndarray = None,
-    U_last:                 np.ndarray = None,
-    S_last:                 np.ndarray = None,
-    nu_new:                 np.ndarray = None,
-    nl_nu_new:              np.ndarray = None,
-    ncvx_dt_cost:           np.ndarray = None,
-    ncvx_ct_cost:           np.ndarray = None,
-    ncvx_cost_grad_dt_last: T.Tuple[np.ndarray, np.ndarray] = None,
-    ncvx_cost_grad_ct_last: T.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray] = None,
-    w_tr:                   float = None,
-    params:                 T.Dict[str, T.Any] = None,
-    fcn_dict:               T.Dict[str, T.Any] = None,
-    cost_dict:              T.Dict[str, T.Any] = None,
+    X_new                    : np.ndarray = None,
+    U_new                    : np.ndarray = None,
+    S_new                    : np.ndarray = None,
+    X_last                   : np.ndarray = None,
+    U_last                   : np.ndarray = None,
+    S_last                   : np.ndarray = None,
+    nu_new                   : np.ndarray = None,
+    nl_nu_new                : np.ndarray = None,
+    ncvx_dt_cost             : np.ndarray = None,
+    ncvx_ct_cost             : np.ndarray = None,
+    ncvx_comp_cost           : np.ndarray = None,
+    ncvx_cost_grad_dt_last   : T.Tuple[np.ndarray, np.ndarray] = None,
+    ncvx_cost_grad_ct_last   : T.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray] = None,
+    ncvx_cost_grad_cvx_last  : T.Tuple[np.ndarray, np.ndarray] = None,
+    ncvx_cost_grad_smth_last : T.Tuple[np.ndarray, np.ndarray] = None,
+    ncvx_cost_grad_comp_last : T.Tuple[np.ndarray, np.ndarray] = None,
+    w_tr                     : float = None,
+    params                   : T.Dict[str, T.Any] = None,
+    fcn_dict                 : T.Dict[str, T.Any] = None,
+    cost_dict                : T.Dict[str, T.Any] = None,
 ) -> T.Dict[str, T.Any]:
     """
     Compute and append all cost components for one SCP iteration:
@@ -34,9 +38,9 @@ def scp_noncvx_cost(
     """
     
     # 1) Nonlinear dynamic cost
-    nl_dyn = params['w_con_dyn'] * np.linalg.norm(nl_nu_new[:12, :].reshape(-1), 1)
-    nl_stt = params['w_con_stt'] * np.linalg.norm(nl_nu_new[12, :].reshape(-1), 1)
-    nlcd   = nl_dyn + nl_stt
+    nl_dyn = params['w_con_dyn'] * np.linalg.norm(nl_nu_new[:params['n_dyn'], :].reshape(-1), 1)
+    nl_ctc = params['w_con_ctc'] * np.linalg.norm(nl_nu_new[params['n_dyn']:, :].reshape(-1), 1)
+    nlcd   = nl_dyn + nl_ctc
     
     # 2) Convex cost
     cvx_cost, cost_dict = fcn_dict['cvx_cost_fcn'](
@@ -47,6 +51,7 @@ def scp_noncvx_cost(
     def compute_lin_ncvx( 
         lin_ncvx_dt_cost: np.ndarray,
         lin_ncvx_ct_cost: np.ndarray,
+        lin_ncvx_comp_cost: np.ndarray,
         params: T.Dict[str, T.Any],
         cost_dict: T.Dict[str, T.Any] = None,
     ) -> T.Tuple[float, T.Dict[str, T.Any]]:
@@ -88,6 +93,21 @@ def scp_noncvx_cost(
                 cost_dict = dict_append(cost_dict, params['name_ct_fcn'][i_ct], lin_ncvx_ct_i)
                 ncvx_cost += lin_ncvx_ct_i
 
+        # -------------------------------------------
+        # --------------- prox-convex ---------------
+        # -------------------------------------------
+        for i_comp in range(params['f_comp_dim']):
+
+            lin_ncvx_comp_i = params['w_comp_fcn'][i_comp] * lin_ncvx_comp_cost[i_comp]
+            lin_ncvx_cost += lin_ncvx_comp_i
+
+            if cost_dict is not None: # We compute the nonlin cost; otherwise lin
+                cost_dict = dict_append(cost_dict, params['name_comp_fcn'][i_comp], lin_ncvx_comp_i)
+                ncvx_cost += lin_ncvx_comp_i
+        # -------------------------------------------
+        # --------------- prox-convex ---------------
+        # -------------------------------------------
+
         if cost_dict is not None: # We compute the nonlin cost; otherwise lin
             return ncvx_cost, cost_dict
         else:
@@ -95,6 +115,7 @@ def scp_noncvx_cost(
     
     ncvx_cost, cost_dict = compute_lin_ncvx(lin_ncvx_dt_cost=ncvx_dt_cost, 
                                             lin_ncvx_ct_cost=ncvx_ct_cost,
+                                            lin_ncvx_comp_cost=ncvx_comp_cost,
                                             params=params,
                                             cost_dict=cost_dict)
 
@@ -124,10 +145,10 @@ def scp_noncvx_cost(
             cp_sum = 0.0
             S_S_nl = 0.0
 
-        ptr_cost = w_tr * ((np.linalg.norm(dx, axis=0)**2 + np.linalg.norm(du, axis=0)**2).sum() + cp_sum.sum())
+        ptr_cost = w_tr * ((np.linalg.norm(dx, axis=0)**2 + np.linalg.norm(du, axis=0)**2).sum() + np.sum(cp_sum))
 
-        lcd = params['w_con_dyn'] * np.linalg.norm(nu_new[:12, :].reshape(-1), 1)
-        lcd += params['w_con_stt'] * np.linalg.norm(nu_new[12, :].reshape(-1), 1)
+        lcd = params['w_con_dyn'] * np.linalg.norm(nu_new[:params['n_dyn'], :].reshape(-1), 1)
+        lcd += params['w_con_ctc'] * np.linalg.norm(nu_new[params['n_dyn']:, :].reshape(-1), 1)
 
         lin_ncvx_dt_cost = ncvx_cost_grad_dt_last[0] + ncvx_cost_grad_dt_last[1] @ (X_new - X_last).flatten(order='C')
 
@@ -137,9 +158,26 @@ def scp_noncvx_cost(
                             + (ncvx_cost_grad_ct_last[3] @ ((U_new - U_last)[:,  1:params['K']].flatten(order='C'))) 
                             + S_S_nl)
 
+        lin_ncvx_comp_cost = 0.0
+        lin_ncvx_comp_cost += ncvx_cost_grad_comp_last[0]
+        if params['ncvx_solver'] == 'pl':
+            lin_ncvx_comp_cost += ncvx_cost_grad_comp_last[1] @ (X_new - X_last).flatten(order='C')
+        elif params['ncvx_solver'] == 'pcx':
+            cvx = fcn_dict['ncvx_cvx_fcn'](X_new, params) # n_cvx x K
+            cvx_last = fcn_dict['ncvx_cvx_fcn'](X_last, params) # n_cvx x K
+
+            d_cvx = np.asarray(cvx - cvx_last).flatten(order='C') # n_cvx * K
+            d_lin = ncvx_cost_grad_cvx_last[1] @ (X_new - X_last).flatten(order='C') # n_cvx * K
+
+            lin_ncvx_comp_cost += np.minimum(0, ncvx_cost_grad_smth_last[1]) @ d_lin
+            lin_ncvx_comp_cost += np.maximum(0, ncvx_cost_grad_smth_last[1]) @ d_cvx
+        else:
+            raise ValueError(f"Unknown ncvx_solver: {params['ncvx_solver']}")
+
         lin_ncvx_cost = compute_lin_ncvx(lin_ncvx_dt_cost=lin_ncvx_dt_cost, 
-                                                lin_ncvx_ct_cost=lin_ncvx_ct_cost,
-                                                params=params)
+                                         lin_ncvx_ct_cost=lin_ncvx_ct_cost,
+                                         lin_ncvx_comp_cost=lin_ncvx_comp_cost,
+                                         params=params)
 
         lin_cost = lcd + cvx_cost + lin_ncvx_cost + ptr_cost
 
@@ -153,6 +191,56 @@ def scp_noncvx_cost(
 
     return cost_dict
 
+def check_cvxpy_scaling(params_dict, small_tol=1e-5, large_tol=1e4):
+    """
+    Scans a dictionary of arrays/matrices for numerical scaling issues 
+    that commonly cause CVXPY solvers to fail.
+    """
+    
+    issues_found = False
+    for name, val in params_dict.items():
+        if val is None:
+            continue
+            
+        arr = np.asarray(val, dtype=float)
+        
+        # 1. Check for NaNs and Infs (Guaranteed to crash CVXPY)
+        if np.isnan(arr).any():
+            print(f"  WARNING: '{name}' contains NaN values!")
+            issues_found = True
+        if np.isinf(arr).any():
+            print(f"  WARNING: '{name}' contains Inf values!")
+            issues_found = True
+            
+        # 2. Check for extremely large values
+        large_mask = np.abs(arr) > large_tol
+        if np.any(large_mask):
+            large_vals = arr[large_mask]
+            print(f"   LARGE VALUES in '{name}':")
+            print(f"   -> Found {len(large_vals)} elements > {large_tol}")
+            print(f"   -> Max absolute value: {np.max(np.abs(large_vals)):.2e}")
+            # Print the first few specific indices and values
+            indices = np.argwhere(large_mask)
+            for i in range(min(3, len(indices))):
+                idx = tuple(indices[i])
+                print(f"      @ index {idx} = {arr[idx]:.2e}")
+            issues_found = True
+            
+        # 3. Check for vanishingly small (but non-zero) values
+        # We ignore pure zeros, as sparsity is fine for solvers.
+        small_mask = (np.abs(arr) < small_tol) & (arr != 0)
+        if np.any(small_mask):
+            small_vals = arr[small_mask]
+            print(f"   SMALL VALUES in '{name}':")
+            print(f"   -> Found {len(small_vals)} non-zero elements < {small_tol}")
+            print(f"   -> Min absolute non-zero value: {np.min(np.abs(small_vals)):.2e}")
+            # Print the first few specific indices and values
+            indices = np.argwhere(small_mask)
+            for i in range(min(3, len(indices))):
+                idx = tuple(indices[i])
+                print(f"      @ index {idx} = {arr[idx]:.2e}")
+            issues_found = True
+
 def set_parameters(problem, **kwargs):
     for key in kwargs:
         if key in problem.param_dict.keys():
@@ -160,7 +248,7 @@ def set_parameters(problem, **kwargs):
 
     return problem
 
-def prox_linear(
+def prox_convex(
     params: T.Dict[str, T.Any],
     cvx_prb: T.Any,
     fcn_dict: T.Dict[str, T.Any],
@@ -175,10 +263,10 @@ def prox_linear(
     S_last = params['S_last']
     w_tr   = params['w_ptr']
 
-    last_cost  = None
-    converged  = False
+    last_cost = None
+    converged = False
 
-    cost_dict = update_cost_dict({}, Ite=0, T_Ite=0, T_Disc=0, T_SubP=0, T_J_Np = 0,)
+    cost_dict = update_cost_dict({}, Ite=0, T_Ite=0, T_Disc=0, T_SubP=0, T_J_Np=0,)
 
     # Initial cost value: J(x_0, u_0, simga_0)
     X_CT = fcn_dict['int_mult_jitted'](X_last, U_last, S_last)
@@ -186,16 +274,19 @@ def prox_linear(
 
     ncvx_dt_cost = np.asarray(fcn_dict['ncvx_dt_fcn_jitted'](X_last))
     ncvx_ct_cost = np.asarray(fcn_dict['ncvx_ct_fcn_jitted'](X_CT))
+    ncvx_comp_cost = np.asarray(fcn_dict['ncvx_comp_fcn_jitted'](X_last))
 
     cost_dict = scp_noncvx_cost(X_new=X_last,
-                                 U_new=U_last,
-                                 S_new=S_last,
-                                 nl_nu_new=nl_nu_last,
-                                 ncvx_dt_cost=ncvx_dt_cost, 
-                                 ncvx_ct_cost=ncvx_ct_cost,
-                                 params=params,
-                                 fcn_dict=fcn_dict,
-                                 cost_dict=cost_dict)
+                                U_new=U_last,
+                                S_new=S_last,
+                                nl_nu_new=nl_nu_last,
+                                ncvx_dt_cost=ncvx_dt_cost, 
+                                ncvx_ct_cost=ncvx_ct_cost,
+                                ncvx_comp_cost=ncvx_comp_cost,
+                                params=params,
+                                fcn_dict=fcn_dict,
+                                cost_dict=cost_dict,
+                                )
 
     last_cost = cost_dict['nlc'][-1]
 
@@ -222,34 +313,62 @@ def prox_linear(
         ncvx_cost_grad_dt_last = fcn_dict['ncvx_dt_fcn_grad_jitted'](X_last)
         ncvx_cost_grad_ct_last = fcn_dict['ncvx_ct_fcn_grad_jitted'](V_CT)
 
+        ncvx_cost_grad_cvx_last = fcn_dict['ncvx_cvx_fcn_grad_jitted'](X_last)
+        cvx_last = fcn_dict['ncvx_cvx_fcn'](X_last, params) # n_cvx x K
+        ncvx_cost_grad_smth_last = fcn_dict['ncvx_smth_fcn_grad_jitted'](cvx_last)
+        ncvx_cost_grad_comp_last = fcn_dict['ncvx_comp_fcn_grad_jitted'](X_last)
+
         # ---------------------------------------------------------------------------------
 
         t0_jax2np = time.time()
 
         V_CT = np.asarray(V_CT[:, -1, :]).T
 
-        ncvx_cost_grad_dt_last = tuple([ np.asarray(ncvx_cost_grad_dt_last[i]) for i in range(len(ncvx_cost_grad_dt_last)) ])
-        ncvx_cost_grad_ct_last = tuple([ np.asarray(ncvx_cost_grad_ct_last[i]) for i in range(len(ncvx_cost_grad_ct_last)) ])
+        ncvx_cost_grad_dt_last = tuple([np.asarray(ncvx_cost_grad_dt_last[i]).copy() 
+                                        for i in range(len(ncvx_cost_grad_dt_last)) ])
+        ncvx_cost_grad_ct_last = tuple([np.asarray(ncvx_cost_grad_ct_last[i]).copy() 
+                                        for i in range(len(ncvx_cost_grad_ct_last)) ])
+        
+        ncvx_cost_grad_cvx_last = tuple([np.asarray(ncvx_cost_grad_cvx_last[i]).copy() 
+                                         for i in range(len(ncvx_cost_grad_cvx_last)) ])
+        ncvx_cost_grad_smth_last = tuple([np.asarray(ncvx_cost_grad_smth_last[i]).copy() 
+                                          for i in range(len(ncvx_cost_grad_smth_last)) ])
+        ncvx_cost_grad_comp_last = tuple([np.asarray(ncvx_cost_grad_comp_last[i]).copy() 
+                                          for i in range(len(ncvx_cost_grad_comp_last)) ])
+        
+        gf_comp_neg_last = np.minimum(0, ncvx_cost_grad_smth_last[1]) @ ncvx_cost_grad_cvx_last[1]
+        gf_smth_pos_last = np.maximum(0, ncvx_cost_grad_smth_last[1])
+        cvx_last = (np.asarray(cvx_last)).flatten(order='C')
+        gf_smth_pos_cvx_last = gf_smth_pos_last @ cvx_last
 
         t_j_n = time.time() - t0_jax2np
 
         # ---------------------------------------------------------------------------------
+        cvx_params = {
+            'f_bar': V_CT[params['i0']:params['i1'], :],
+            'A_bar': V_CT[params['i1']:params['i2'], :],
+            'B_bar': V_CT[params['i2']:params['i3'], :],
+            'C_bar': V_CT[params['i3']:params['i4'], :],
+            'z_bar': V_CT[params['i5']:params['i6'], :],
+            'X_last': X_last, 
+            'U_last': U_last,
+            'f_dt_last': ncvx_cost_grad_dt_last[0],
+            'gf_dt_last': ncvx_cost_grad_dt_last[1],
+            'f_ct_last': ncvx_cost_grad_ct_last[0],
+            'A_ct_last': ncvx_cost_grad_ct_last[1],
+            'B_ct_last': ncvx_cost_grad_ct_last[2],
+            'C_ct_last': ncvx_cost_grad_ct_last[3],
+            'f_comp_last': ncvx_cost_grad_comp_last[0],
+            'gf_comp_last': ncvx_cost_grad_comp_last[1],
+            'gf_comp_neg_last': gf_comp_neg_last,
+            'gf_smth_pos_last': gf_smth_pos_last,
+            'gf_smth_pos_cvx_last': gf_smth_pos_cvx_last,
+        }
 
-        set_parameters(cvx_prb, 
-                        f_bar      = V_CT[params['i0']:params['i1'], :],
-                        A_bar      = V_CT[params['i1']:params['i2'], :],
-                        B_bar      = V_CT[params['i2']:params['i3'], :],
-                        C_bar      = V_CT[params['i3']:params['i4'], :],
-                        z_bar      = V_CT[params['i5']:params['i6'], :],
-                        X_last     = X_last, 
-                        U_last     = U_last,
-                        f_dt_last  = ncvx_cost_grad_dt_last[0],
-                        gf_dt_last = ncvx_cost_grad_dt_last[1],
-                        f_ct_last  = ncvx_cost_grad_ct_last[0],
-                        A_ct_last  = ncvx_cost_grad_ct_last[1],
-                        B_ct_last  = ncvx_cost_grad_ct_last[2],
-                        C_ct_last  = ncvx_cost_grad_ct_last[3],
-                        )
+        set_parameters(cvx_prb, **cvx_params)
+
+        # Run the diagnostic check
+        check_cvxpy_scaling(cvx_params, small_tol=0.0, large_tol=1e5)
         
         if params['free_final_time']:
 
@@ -272,19 +391,24 @@ def prox_linear(
 
             ncvx_dt_cost = np.asarray(fcn_dict['ncvx_dt_fcn_jitted'](X_new))
             ncvx_ct_cost = np.asarray(fcn_dict['ncvx_ct_fcn_jitted'](X_new_CT))
+            ncvx_comp_cost = np.asarray(fcn_dict['ncvx_comp_fcn_jitted'](X_new))
 
             cost_dict = scp_noncvx_cost(X_new=X_new, U_new=U_new, S_new=S_new, 
-                                         X_last=X_last, U_last=U_last, S_last=S_last, 
-                                         nu_new=nu_new, nl_nu_new=nl_nu_new,
-                                         ncvx_dt_cost=ncvx_dt_cost, 
-                                         ncvx_ct_cost=ncvx_ct_cost,
-                                         ncvx_cost_grad_dt_last=ncvx_cost_grad_dt_last, 
-                                         ncvx_cost_grad_ct_last=ncvx_cost_grad_ct_last,
-                                         w_tr=w_tr, params=params, 
-                                         fcn_dict=fcn_dict,
-                                         cost_dict=cost_dict,
-                                        )
-
+                                        X_last=X_last, U_last=U_last, S_last=S_last, 
+                                        nu_new=nu_new, nl_nu_new=nl_nu_new,
+                                        ncvx_dt_cost=ncvx_dt_cost, 
+                                        ncvx_ct_cost=ncvx_ct_cost,
+                                        ncvx_comp_cost=ncvx_comp_cost,
+                                        ncvx_cost_grad_dt_last=ncvx_cost_grad_dt_last, 
+                                        ncvx_cost_grad_ct_last=ncvx_cost_grad_ct_last,
+                                        ncvx_cost_grad_cvx_last=ncvx_cost_grad_cvx_last,
+                                        ncvx_cost_grad_smth_last=ncvx_cost_grad_smth_last,
+                                        ncvx_cost_grad_comp_last=ncvx_cost_grad_comp_last,
+                                        w_tr=w_tr, params=params, 
+                                        fcn_dict=fcn_dict,
+                                        cost_dict=cost_dict,
+                                    )
+            
             delta_J = last_cost - cost_dict['nlc'][-1]
             delta_L = last_cost - cost_dict['lc'][-1]
             rho = delta_J / delta_L
@@ -296,6 +420,12 @@ def prox_linear(
 
                 last_cost = cost_dict['nlc'][-1]
                 note = 'First'
+
+                if delta_L < (params['ptr_term']) or (w_tr >= 1e7):
+                    converged = True
+                    print('delta_L', delta_L)
+                    note = 'Conv'
+
                 break
 
             else:
@@ -310,7 +440,7 @@ def prox_linear(
                     note = '!!!'
                     break
 
-                if delta_L < (params['ptr_term']) or (w_tr >= 1e8):
+                if delta_L < (params['ptr_term']) or (w_tr >= 1e7):
                     converged = True
                     print('delta_L', delta_L)
                     note = 'Conv'

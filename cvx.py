@@ -13,6 +13,12 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
     n_u = params['n_u']
     K = params['K']
 
+    n_dt = params['f_dt_dim']
+    n_ct = params['f_ct_dim']
+
+    n_cvx = params['f_cvx_dim']
+    n_comp = params['f_comp_dim']
+
     var = {}
     par = {}
 
@@ -33,17 +39,30 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
 
     par['w_tr'] = cp.Parameter(nonneg=True, name='w_tr')
 
-    par['f_dt_last'] = cp.Parameter(params['f_dt_dim'], name='f_dt_last')
-    par['gf_dt_last'] = cp.Parameter((params['f_dt_dim'], n_x*K), name='gf_dt_last')
+    par['f_dt_last'] = cp.Parameter(n_dt, name='f_dt_last')
+    par['gf_dt_last'] = cp.Parameter((n_dt, n_x*K), name='gf_dt_last')
 
-    par['f_ct_last'] = cp.Parameter(params['f_ct_dim'], name='f_ct_last')
-    par['A_ct_last'] = cp.Parameter((params['f_ct_dim'], n_x*(K-1)), name='A_ct_last')
-    par['B_ct_last'] = cp.Parameter((params['f_ct_dim'], n_u*(K-1)), name='B_ct_last')
-    par['C_ct_last'] = cp.Parameter((params['f_ct_dim'], n_u*(K-1)), name='C_ct_last')
+    par['f_ct_last'] = cp.Parameter(n_ct, name='f_ct_last')
+    par['A_ct_last'] = cp.Parameter((n_ct, n_x*(K-1)), name='A_ct_last')
+    par['B_ct_last'] = cp.Parameter((n_ct, n_u*(K-1)), name='B_ct_last')
+    par['C_ct_last'] = cp.Parameter((n_ct, n_u*(K-1)), name='C_ct_last')
+
+    # -------------------------------------------
+    # --------------- prox-convex ---------------
+    # -------------------------------------------
+    par['gf_comp_neg_last'] = cp.Parameter((n_comp, n_x*K), nonneg=True, name='gf_comp_neg_last')
+    par['gf_smth_pos_last'] = cp.Parameter((n_comp, n_cvx*K), nonneg=True, name='gf_smth_pos_last')
+    par['gf_smth_pos_cvx_last'] = cp.Parameter(n_comp, name='gf_smth_pos_cvx_last')
+
+    par['f_comp_last'] = cp.Parameter(n_comp, name='f_comp_last')
+    par['gf_comp_last'] = cp.Parameter((n_comp, n_x*K), name='gf_comp_last')
+    # -------------------------------------------
+    # --------------- prox-convex ---------------
+    # -------------------------------------------
 
     if params['free_final_time']:
         par['S_bar'] = cp.Parameter((n_x, K - 1), name='S_bar')
-        par['S_ct_last'] = cp.Parameter((params['f_ct_dim'], 1*(K-1)), name='S_ct_last')
+        par['S_ct_last'] = cp.Parameter((n_ct, 1*(K-1)), name='S_ct_last')
 
         if (params['time_dil']):
             var['S'] = cp.Variable((1, K - 1), nonneg=True, name='S')
@@ -74,16 +93,19 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
 
         ds_sum = 0.
         S_S = np.zeros( (n_x, K - 1) )
-        S_S_ct = np.zeros(params['f_ct_dim'])
+        S_S_ct = np.zeros(n_ct)
+
+    # ---------------------------------------------------------------------------------
 
     cost = par['w_tr'] * (cp.sum(cp.norm(var['dx'], axis=0)**2) + cp.sum(cp.norm(var['du'], axis=0)**2) + ds_sum) # Trust region
-    cost += params['w_con_dyn'] * cp.sum(cp.abs(var['nu'][:12, :]))
-    cost += params['w_con_stt'] * cp.sum(cp.abs(var['nu'][12, :]))
+    cost += params['w_con_dyn'] * cp.sum(cp.abs(var['nu'][:params['n_dyn'], :]))
+    cost += params['w_con_ctc'] * cp.sum(cp.abs(var['nu'][params['n_dyn']:, :]))
+
+    # ---------------------------------------------------------------------------------
 
     lin_dt = par['f_dt_last'] + par['gf_dt_last'] @ cp.vec(var['dx'], order='C')
 
-    for i_dt in range(params['f_dt_dim']):
-
+    for i_dt in range(n_dt):
         if params['pen_dt_fcn'][i_dt] == 'abs':
             cost += params['w_dt_fcn'][i_dt] * cp.abs(lin_dt[i_dt])
         elif params['pen_dt_fcn'][i_dt] == 'max':
@@ -91,14 +113,15 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
         else:
             cost += params['w_dt_fcn'][i_dt] * lin_dt[i_dt]
 
+    # ---------------------------------------------------------------------------------
+
     lin_ct = (par['f_ct_last'] 
               + (par['A_ct_last'] @ cp.vec(var['dx'][:, :K-1], order='C')) 
               + (par['B_ct_last'] @ cp.vec(var['du'][:, :K-1], order='C')) 
               + (par['C_ct_last'] @ cp.vec(var['du'][:,  1:K], order='C')) 
               + S_S_ct)
 
-    for i_ct in range(params['f_ct_dim']):
-
+    for i_ct in range(n_ct):
         if params['pen_ct_fcn'][i_ct] == 'abs':
             cost += params['w_ct_fcn'][i_ct] * cp.abs(lin_ct[i_ct])
         elif params['pen_ct_fcn'][i_ct] == 'max':
@@ -106,8 +129,31 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
         else:
             cost += params['w_ct_fcn'][i_ct] * lin_ct[i_ct]
 
+    # -------------------------------------------
+    # --------------- prox-convex ---------------
+    # -------------------------------------------
+
+    lin_comp = par['f_comp_last']
+    if params['ncvx_solver'] == 'pl':
+        lin_comp += par['gf_comp_last'] @ cp.vec(var['dx'], order='C')
+    elif params['ncvx_solver'] == 'pcx':
+        print("PCS IS ACTIVE")
+        y_cvx = fcn_dict['ncvx_cvx_cp_fcn'](var['X'], params)
+        lin_comp += par['gf_comp_neg_last'] @ cp.vec(var['dx'], order='C')
+        lin_comp += par['gf_smth_pos_last'] @ cp.vec(y_cvx, order='C') - par['gf_smth_pos_cvx_last']
+    else:
+        raise ValueError(f"Unknown ncvx_solver: {params['ncvx_solver']}")
+
+    for i_comp in range(n_comp):
+        cost += params['w_comp_fcn'][i_comp] * lin_comp[i_comp]
+    # -------------------------------------------
+    # --------------- prox-convex ---------------
+    # -------------------------------------------
+
     cost += fcn_dict['cvx_cost_fcn'](var['X'], var['U'], var['S'], 
-                                           var['nu'], params, npy=False)
+                                     var['nu'], params, npy=False)
+
+    # ---------------------------------------------------------------------------------
 
     constraints = [
         par['X_last'][:, k + 1] + var['dx'][:, k + 1] == par['f_bar'][:, k]
@@ -144,26 +190,24 @@ def solve_parsed_problem(cvx_prb: T.Any,
     if params['use_generated_code']:
         cvx_prb.solve(method = 'CPG')
     else:
-        cvx_prb.solve(solver=params['convex_solver'], abstol=1e-8, reltol=1e-8, feastol=1e-8)
-
-    # cvx_prb.solve(method = 'CPG')
-    # try:
-    #     cvx_prb.solve(solver='QOCO', abstol=1e-8, reltol=1e-8, feastol=1e-8)
-
-    # except:
-    #     print('QOQO FAILS')
-
-    #     try:
-    #         cvx_prb.solve(solver='CLARABEL', abstol=1e-8, reltol=1e-8, feastol=1e-8)
-    #     except:
-    #         print('CLARABEL FAILS')
-    #         try:
-    #             cvx_prb.solve(solver='ECOS', abstol=1e-8, reltol=1e-8, feastol=1e-8)
-    #         except:
-    #             print('ECOS FAILS')
-    #             cvx_prb.solve(solver='MOSEK')
-
-    # print('cvx_prb.value: ', cvx_prb.value)
+        # cvx_prb.solve(solver=params['convex_solver'], abstol=1e-8, reltol=1e-8, feastol=1e-8)
+        try:
+            cvx_prb.solve(solver='QOCO')
+        except:
+            print('QOCO FAILS')
+            try:
+                cvx_prb.solve(solver='CLARABEL')
+            except:
+                print('CLARABEL FAILS')
+                try:
+                    cvx_prb.solve(solver='ECOS')
+                except:
+                    print('ECOS FAILS')
+                    try:
+                        cvx_prb.solve(solver='MOSEK')
+                    except:
+                        print('MOSEK FAILS')
+                        cvx_prb.solve(solver='ECOS')
 
     X_new = cvx_prb.var_dict['X'].value
     U_new = cvx_prb.var_dict['U'].value
