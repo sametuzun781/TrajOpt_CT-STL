@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -Wall -Wextra -O3 -arch arm64 -dynamiclib -Wl,-headerpad_max_install_names -o out/libqdldl.dylib -install_name @rpath/libqdldl.dylib CMakeFiles/qdldl.dir/src/qdldl.c.o   -lm

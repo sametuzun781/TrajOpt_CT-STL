@@ -1,0 +1,20 @@
+[
+{
+  "directory": "/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/build/solver_code/lib/qdldl",
+  "command": "/usr/bin/cc  -I/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/include -I/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/build/solver_code/lib/qdldl/include -O3 -Wall -Wextra -O3 -arch arm64 -fPIC -o CMakeFiles/qdldlstatic.dir/src/qdldl.c.o -c /Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/src/qdldl.c",
+  "file": "/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/src/qdldl.c",
+  "output": "solver_code/lib/qdldl/CMakeFiles/qdldlstatic.dir/src/qdldl.c.o"
+},
+{
+  "directory": "/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/build/solver_code/lib/qdldl",
+  "command": "/usr/bin/cc -DBUILDING_QDLDL -DQDLDL_SHARED_LIB -Dqdldl_EXPORTS -I/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/include -I/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/build/solver_code/lib/qdldl/include -O3 -Wall -Wextra -O3 -arch arm64 -fPIC -o CMakeFiles/qdldl.dir/src/qdldl.c.o -c /Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/src/qdldl.c",
+  "file": "/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/src/qdldl.c",
+  "output": "solver_code/lib/qdldl/CMakeFiles/qdldl.dir/src/qdldl.c.o"
+},
+{
+  "directory": "/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/build/solver_code/lib/qdldl",
+  "command": "/usr/bin/cc  -I/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/include -O3 -Wall -Wextra -O3 -arch arm64 -fPIC -o CMakeFiles/qdldlobject.dir/src/qdldl.c.o -c /Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/src/qdldl.c",
+  "file": "/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_aug_solver/c/solver_code/lib/qdldl/src/qdldl.c",
+  "output": "solver_code/lib/qdldl/CMakeFiles/qdldlobject.dir/src/qdldl.c.o"
+}
+]
