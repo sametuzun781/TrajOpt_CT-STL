@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_solver/c/build/cmake_install.cmake",
+		"/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_solver/c/build/solver_code/cmake_install.cmake",
+		"/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_solver/c/build/solver_code/lib/qdldl/cmake_install.cmake",
+		"/Users/su781/Desktop/gitclonescp/TrajOpt_CT-STL/di_until_solver/c/build/solver_code/lib/amd/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
