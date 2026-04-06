@@ -33,7 +33,6 @@ def dynamics(params: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
         # ------------------------------------------------------------------------------------------------------------------------------------------------
 
         C1 = 1e-4
-        C2 = 1e-4
         EVENT_EPS = 1e-12
         TAU_EPS = 1e-4
         SPEED_MARGIN = 0.06
@@ -59,19 +58,19 @@ def dynamics(params: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
         dx = dx.at[speed_int_idx].set(speed_integral / speed_scale)
 
         # Smooth "always until t" term
-        q1_t = jnp.sqrt(C1**2 + jnp.maximum(x[speed_int_idx], 0.0) * speed_scale / tau_safe) - C1
+        q1_t = x[speed_int_idx] * speed_scale / tau_safe
 
         position_error = x[:3] - params["p_w"]
         dist_sq = jnp.dot(position_error, position_error)
         dist_violation = DISTANCE_SCALE * (dist_sq - params["r_w"] ** 2)
 
         z_pos = jnp.sqrt(
-            C2 + 0.5 * (
+            C1 + 0.5 * (
                 jnp.square(jnp.maximum(dist_violation, 0.0))
                 + jnp.square(jnp.maximum(q1_t, 0.0))
             )
         )
-        z_t = (z_pos - jnp.sqrt(C2)) / INTEGRAL_SCALE
+        z_t = (z_pos - jnp.sqrt(C1)) / INTEGRAL_SCALE
 
         geo_integrand = jnp.square(jnp.maximum(z_t, 0.0)) + EVENT_EPS
         dx = dx.at[geo_int_idx].set(x[geo_int_idx] * jnp.log(geo_integrand) / t_f)
