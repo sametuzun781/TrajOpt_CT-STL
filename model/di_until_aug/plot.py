@@ -272,7 +272,7 @@ def save_individual_until_figures(results, params, save_dir):
     plt.close(fig1)
 
     # 2) Speed Profile (Standalone)
-    fig2 = plt.figure(figsize=(6.5, 3.5))
+    fig2 = plt.figure(figsize=(6.5, 2.8))
     ax2 = fig2.add_subplot(111)
     plot_speed_profile(ax2, results, params)
     fig2.savefig(os.path.join(save_dir, "until_speed_profile.png"), bbox_inches="tight")
@@ -280,7 +280,7 @@ def save_individual_until_figures(results, params, save_dir):
     plt.close(fig2)
 
     # 3) Station Margin (Standalone)
-    fig3 = plt.figure(figsize=(6.5, 3.5))
+    fig3 = plt.figure(figsize=(6.5, 2.8))
     ax3 = fig3.add_subplot(111)
     plot_station_margin(ax3, results, params)
     fig3.savefig(os.path.join(save_dir, "until_station_margin.png"), bbox_inches="tight")

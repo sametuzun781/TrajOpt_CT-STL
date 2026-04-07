@@ -72,7 +72,7 @@ def dynamics(params: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
         )
         z_t = (z_pos - jnp.sqrt(C1)) / INTEGRAL_SCALE
 
-        geo_integrand = jnp.square(jnp.maximum(z_t, 0.0)) + EVENT_EPS
+        geo_integrand = jnp.square(z_t) + EVENT_EPS
         dx = dx.at[geo_int_idx].set(x[geo_int_idx] * jnp.log(geo_integrand) / t_f)
 
         # ------------------------------------------------------------------------------------------------------------------------------------------------
