@@ -1,3 +1,4 @@
+from __future__ import annotations
 from jax import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -5,7 +6,7 @@ from jax import vmap
 
 import typing as T
 import numpy as np
-import cvxpy as cp
+from optional_cvxpy import cp
 from utils import dict_append
 from stl import conjunction, disjunction, UNTIL
 
@@ -192,7 +193,7 @@ def ncvx_smth_fcn(
     params: T.Dict[str, T.Any],
 ) -> jnp.ndarray:
     
-    return jnp.atleast_1d([jnp.array(0.0)])
+    return jnp.stack([jnp.array(0.0)])
 
 def ncvx_comp_fcn(
     X_last: np.ndarray, # n_states x K
@@ -214,14 +215,14 @@ def ncvx_dt_fcn(
     
     # n_dt x 1
 
-    z1 = jnp.sum(jnp.array(0.0) * X_last)
-    z2 = jnp.sum(jnp.array(0.0) * X_last)
-    z3 = jnp.sum(jnp.array(0.0) * X_last)
-    z4 = jnp.sum(jnp.array(0.0) * X_last)
-    z5 = jnp.sum(jnp.array(0.0) * X_last)
-    z6 = jnp.sum(jnp.array(0.0) * X_last)
-    z7 = jnp.sum(jnp.array(0.0) * X_last)
-    z8 = jnp.sum(jnp.array(0.0) * X_last)
+    z1 = jnp.array(0.0)
+    z2 = jnp.array(0.0)
+    z3 = jnp.array(0.0)
+    z4 = jnp.array(0.0)
+    z5 = jnp.array(0.0)
+    z6 = jnp.array(0.0)
+    z7 = jnp.array(0.0)
+    z8 = jnp.array(0.0)
 
     z1 += X_last[12, -1]
     z2 += X_last[13, -1]
@@ -234,7 +235,7 @@ def ncvx_dt_fcn(
     z7 += -3*((c + 1e2*X_last[20, -1])**(1/2) - (c + (0.1*X_last[19, -1]))**(1/2) )
     z8 += -3*((c + 1e2*X_last[22, -1])**(1/2) - (c + (0.1*X_last[21, -1]))**(1/2) )
 
-    return jnp.atleast_1d([z1, z2, z3, z4, z5, z6, z7, z8])
+    return jnp.stack([z1, z2, z3, z4, z5, z6, z7, z8])
 
 def ncvx_ct_fcn(
     X_CT:   np.ndarray, # n_states x (K x n_dt)
@@ -243,7 +244,6 @@ def ncvx_ct_fcn(
     
     # n_ct x 1
 
-    X = X_CT.reshape((params['n_x'], -1))
-    z = jnp.sum(jnp.array(0.0) * X)
-
-    return jnp.atleast_1d([z])
+    # All continuous constraints in this model are already augmented states.
+    # The separate continuous-time cost is identically zero on finite inputs.
+    return jnp.zeros((1,), dtype=X_CT.dtype)

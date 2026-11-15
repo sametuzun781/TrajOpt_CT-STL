@@ -1,3 +1,4 @@
+from __future__ import annotations
 from jax import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -5,7 +6,7 @@ from jax import vmap
 
 import typing as T
 import numpy as np
-import cvxpy as cp
+from optional_cvxpy import cp
 from utils import dict_append
 from stl import conjunction, disjunction, UNTIL
 
@@ -122,7 +123,7 @@ def ncvx_smth_fcn(
     params: T.Dict[str, T.Any],
 ) -> jnp.ndarray:
     
-    return jnp.atleast_1d([jnp.array(0.0)])
+    return jnp.stack([jnp.array(0.0)])
 
 def ncvx_comp_fcn(
     X_last: np.ndarray, # n_states x K
@@ -145,7 +146,7 @@ def ncvx_dt_fcn(
     # n_dt x 1
 
     z = jnp.sum(jnp.array(0.0) * X_last)
-    return jnp.atleast_1d([z]) 
+    return jnp.stack([z])
 
 def ncvx_ct_fcn(
     X_CT:   np.ndarray, # n_states x (K x n_dt)
@@ -172,4 +173,4 @@ def ncvx_ct_fcn(
                         f=-10*spd_cost, 
                         g=-1*pos)
 
-    return jnp.atleast_1d([z])
+    return jnp.stack([z])

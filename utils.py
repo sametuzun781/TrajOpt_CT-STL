@@ -3,6 +3,8 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 import glob
+import numbers
+import numpy as np
 from PIL import Image
 
 # ------------------------------------------------------------------------------------------------------------
@@ -67,6 +69,7 @@ def update_cost_dict(d, **kwargs):
         'T_Disc': 'T-Disc',
         'T_SubP': 'T-SubP',
         'T_J_Np': 'T-J_Np',
+        'T_Np_J': 'T-Np_J',
         'D_NL': 'D-NL',
         'D_L': 'D-L',
         'W_TR': 'W-TR',
@@ -80,31 +83,27 @@ def update_cost_dict(d, **kwargs):
     return d
 
 def print_ite(log_ite_all):
+    """Timing records are seconds; display is milliseconds."""
+    columns = list(log_ite_all)
+    labels = [key + " [ms]" if key.startswith("T-") else key for key in columns]
+    width = max(14, max(map(len, labels), default=0) + 2)
+    if log_ite_all.get("Note", [None])[-1] == "Start":
+        print("".join(label.ljust(width) for label in labels))
+    values = []
+    for key in columns:
+        value = log_ite_all[key]
+        if isinstance(value, list):
+            value = value[-1]
+        if hasattr(value, "shape") and np.size(value) == 1:
+            value = float(value)
+        if isinstance(value, numbers.Real):
+            if key.startswith("T-"):
+                value = f"{1000.0 * float(value):.3f}"
+            elif not isinstance(value, numbers.Integral):
+                value = f"{value:.2f}"
+        values.append(str(value).ljust(width))
+    print("".join(values))
 
-    col_width = int(1 * max(len(ele) for ele in log_ite_all.keys() if ele is not None)) + 4
-
-    if log_ite_all['Note'][-1] == 'Start':
-        all_dum = ''
-        for key in log_ite_all.keys():
-            all_dum += key.ljust(col_width)
-        print(all_dum)
-
-    all_dum = ''
-    for key in log_ite_all.keys():
-        if type(log_ite_all[key]) == list:
-            dum = log_ite_all[key][-1]
-            if isinstance(dum, Array):
-                dum = float(dum)
-            if isinstance(dum, float):
-                dum = round(dum, 4)
-                dum = min(dum, 999999.99)
-
-        all_dum += str(dum).ljust(col_width)
-    print(all_dum)
-
-# ------------------------------------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------------------------------------
 
 def rotation_matrix(angle):
     phi, theta, psi = angle

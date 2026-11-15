@@ -1,13 +1,11 @@
 import typing as T
 import numpy as np
-import cvxpy as cp
+from optional_cvxpy import cp
 
 def parse_convex_problem(params : T.Dict[str, T.Any],
                          fcn_dict : T.Dict[str, T.Any]):
        
-    """
-    Solves the convex sub-problem using CLARABEL or ECOS and retruns the optimal values of X, U, S and nu
-    """
+    """Build the convex subproblem with the common positive objective scale."""
 
     n_x = params['n_x']
     n_u = params['n_u']
@@ -70,7 +68,7 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
             var['ds'] = cp.Variable((1, K - 1), name='ds')
 
             sig_matrix = np.ones( (n_x, 1) ) @ var['ds']
-            ds_sum = cp.sum(cp.norm(var['ds'][0, :] / params['t_f'] * params['w_ds'], axis=0)**2)
+            ds_sum = cp.sum_squares(var['ds'][0, :] / params['t_f'] * params['w_ds'])
 
             sig_ct = var['ds']
         else:
@@ -97,7 +95,7 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
 
     # ---------------------------------------------------------------------------------
 
-    cost = par['w_tr'] * (cp.sum(cp.norm(var['dx'], axis=0)**2) + cp.sum(cp.norm(var['du'], axis=0)**2) + ds_sum) # Trust region
+    cost = par['w_tr'] * (cp.sum_squares(var['dx']) + cp.sum_squares(var['du']) + ds_sum) # Trust region
     cost += params['w_con_dyn'] * cp.sum(cp.abs(var['nu'][:params['n_dyn'], :]))
     cost += params['w_con_ctc'] * cp.sum(cp.abs(var['nu'][params['n_dyn']:, :]))
 
@@ -178,7 +176,10 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
     constraints += fcn_dict['cvx_cons_fcn'](var['X'], var['U'], var['S'], params)
     
     # Create the optimization problem
-    cvx_prb = cp.Problem(cp.Minimize(cost), constraints)
+    scale = max(1., params['w_con_dyn'], params['w_con_ctc'],
+                *params['w_dt_fcn'], *params['w_ct_fcn'])
+    cvx_prb = cp.Problem(cp.Minimize(cost / scale), constraints)
+    cvx_prb.objective_scale = scale
 
     # print(cvx_prb.is_dcp(dpp=True))
 
@@ -187,27 +188,13 @@ def parse_convex_problem(params : T.Dict[str, T.Any],
 def solve_parsed_problem(cvx_prb: T.Any, 
                          params: T.Dict[str, T.Any]):
     
-    if params['use_generated_code']:
-        cvx_prb.solve(method = 'CPG')
-    else:
-        # cvx_prb.solve(solver=params['convex_solver'], abstol=1e-8, reltol=1e-8, feastol=1e-8)
-        try:
-            cvx_prb.solve(solver='QOCO')
-        except:
-            print('QOCO FAILS')
-            try:
-                cvx_prb.solve(solver='CLARABEL')
-            except:
-                print('CLARABEL FAILS')
-                try:
-                    cvx_prb.solve(solver='ECOS')
-                except:
-                    print('ECOS FAILS')
-                    try:
-                        cvx_prb.solve(solver='MOSEK')
-                    except:
-                        print('MOSEK FAILS')
-                        cvx_prb.solve(solver='ECOS')
+    if hasattr(cvx_prb, 'solve_ipm'):
+        return cvx_prb.solve_ipm()
+
+    cvx_prb.solve(solver='QOCO', warm_start=False,
+                  **params.get('qoco_options', {}))
+    if cvx_prb.status != cp.OPTIMAL:
+        raise RuntimeError(f'QOCO did not solve the convex subproblem: {cvx_prb.status}')
 
     X_new = cvx_prb.var_dict['X'].value
     U_new = cvx_prb.var_dict['U'].value

@@ -2,6 +2,9 @@ import time
 import copy
 import typing as T
 import numpy as np
+import jax
+import jax.numpy as jnp
+from array_io import to_host, to_device
 from utils import dict_append, update_cost_dict, print_ite
 from cvx import solve_parsed_problem
 
@@ -258,35 +261,61 @@ def prox_convex(
     Solves the non-convex trajectory optimization problem using Penalized Trust Region method (PTR)
     """
 
-    X_last = params['X_last']
-    U_last = params['U_last']
-    S_last = params['S_last']
-    w_tr   = params['w_ptr']
-
-    last_cost = None
+    call_started = time.perf_counter()
+    # Python makes scalar decisions; trajectories/Jacobians stay on the device.
+    from full_scp import linearize_trajectory, evaluate_costs
+    model = fcn_dict['cvx_cons_fcn'].__module__.split('.')[1]
+    optional = hasattr(cvx_prb, 'solve_ipm')
+    compilation_before = getattr(cvx_prb, 'compile_seconds', 0.0)
+    (X_last, U_last, S_last), initial_upload = to_device(tuple(
+        params[name] for name in ('X_last', 'U_last', 'S_last')))
+    w_tr = params['w_ptr']
     converged = False
+    total_convex_seconds = 0.0
+    convex_solve_count = 0
+    solvers_used = set()
+    trial_timings = []
 
-    cost_dict = update_cost_dict({}, Ite=0, T_Ite=0, T_Disc=0, T_SubP=0, T_J_Np=0,)
+    # Reuse the very same array equations as full-JIT; no new model/solver.
+    if not hasattr(cvx_prb, '_array_linearize'):
+        started = time.perf_counter()
+        linearize = jax.jit(lambda X, U, S: linearize_trajectory(X, U, S, params, fcn_dict))
+        cvx_prb._array_linearize = linearize.lower(X_last, U_last, S_last).compile()
+        sample = cvx_prb._array_linearize(X_last, U_last, S_last)
+        jax.block_until_ready(sample)
+        costs = jax.jit(lambda X, U, S, nu, values, weight:
+            evaluate_costs(X, U, S, nu, values, weight, params, fcn_dict, model))
+        zero_defect = jnp.zeros((params['n_x'], params['K'] - 1))
+        cvx_prb._array_costs = costs.lower(
+            X_last, U_last, S_last, zero_defect, sample, jnp.asarray(w_tr)).compile()
+        array_compilation = time.perf_counter() - started
+        print(f'Array-kernel preparation: {1000.0 * array_compilation:.3f} ms', flush=True)
+    else:
+        array_compilation = 0.0
+    linearize, evaluate = cvx_prb._array_linearize, cvx_prb._array_costs
+    cost_names = (['S_cost'] if params['free_final_time'] else [])
+    if model == 'quad_flight':
+        if params['add_inp_trq']:
+            cost_names.append('input_cost')
+        if params['add_elv_rate']:
+            cost_names.append('elv_rate_cost')
+    cost_names += ['dyn_cost', 'ctc_cost']
+    cost_names += params['name_dt_fcn'] + params['name_ct_fcn'] + params['name_comp_fcn']
+    cost_names += ['ptr_cost', 'lcd', 'nlcd', 'lc', 'nlc']
+    cost_names = tuple(dict.fromkeys(cost_names))
 
-    # Initial cost value: J(x_0, u_0, simga_0)
-    X_CT = fcn_dict['int_mult_jitted'](X_last, U_last, S_last)
-    nl_nu_last = (X_last[:, 1:] - X_CT[:, :, -1])
-
-    ncvx_dt_cost = np.asarray(fcn_dict['ncvx_dt_fcn_jitted'](X_last))
-    ncvx_ct_cost = np.asarray(fcn_dict['ncvx_ct_fcn_jitted'](X_CT))
-    ncvx_comp_cost = np.asarray(fcn_dict['ncvx_comp_fcn_jitted'](X_last))
-
-    cost_dict = scp_noncvx_cost(X_new=X_last,
-                                U_new=U_last,
-                                S_new=S_last,
-                                nl_nu_new=nl_nu_last,
-                                ncvx_dt_cost=ncvx_dt_cost, 
-                                ncvx_ct_cost=ncvx_ct_cost,
-                                ncvx_comp_cost=ncvx_comp_cost,
-                                params=params,
-                                fcn_dict=fcn_dict,
-                                cost_dict=cost_dict,
-                                )
+    execution_started = time.perf_counter()
+    initial_values = linearize(X_last, U_last, S_last)
+    initial = evaluate(X_last, U_last, S_last,
+                       jnp.zeros((params['n_x'], params['K'] - 1)),
+                       initial_values, jnp.asarray(0.0))
+    jax.block_until_ready(initial)
+    initial, initial_download = to_host(initial)
+    initial['lc'] = 0.0  # No convex trial in the original initial row.
+    cost_dict = update_cost_dict({}, Ite=0, T_Ite=0., T_Disc=0.,
+                                 T_SubP=0., T_J_Np=initial_download, T_Np_J=initial_upload)
+    for name in cost_names:
+        cost_dict = dict_append(cost_dict, name, float(initial[name]))
 
     last_cost = cost_dict['nlc'][-1]
 
@@ -306,117 +335,70 @@ def prox_convex(
 
         t0_ite = time.time()
 
-        t0_dicr = time.time()
-        V_CT = fcn_dict['cal_disc_jitted'](X_last, U_last, S_last)
-        t_dicr = time.time() - t0_dicr
+        t0_dicr = time.perf_counter()
+        cvx_params = linearize(X_last, U_last, S_last)
+        jax.block_until_ready(cvx_params)
+        t_dicr = time.perf_counter() - t0_dicr
+        t_j_n = 0.0
+        t_n_j = 0.0
 
-        ncvx_cost_grad_dt_last = fcn_dict['ncvx_dt_fcn_grad_jitted'](X_last)
-        ncvx_cost_grad_ct_last = fcn_dict['ncvx_ct_fcn_grad_jitted'](V_CT)
-
-        ncvx_cost_grad_cvx_last = fcn_dict['ncvx_cvx_fcn_grad_jitted'](X_last)
-        cvx_last = fcn_dict['ncvx_cvx_fcn'](X_last, params) # n_cvx x K
-        ncvx_cost_grad_smth_last = fcn_dict['ncvx_smth_fcn_grad_jitted'](cvx_last)
-        ncvx_cost_grad_comp_last = fcn_dict['ncvx_comp_fcn_grad_jitted'](X_last)
-
-        # ---------------------------------------------------------------------------------
-
-        t0_jax2np = time.time()
-
-        V_CT = np.asarray(V_CT[:, -1, :]).T
-
-        ncvx_cost_grad_dt_last = tuple([np.asarray(ncvx_cost_grad_dt_last[i]).copy() 
-                                        for i in range(len(ncvx_cost_grad_dt_last)) ])
-        ncvx_cost_grad_ct_last = tuple([np.asarray(ncvx_cost_grad_ct_last[i]).copy() 
-                                        for i in range(len(ncvx_cost_grad_ct_last)) ])
-        
-        ncvx_cost_grad_cvx_last = tuple([np.asarray(ncvx_cost_grad_cvx_last[i]).copy() 
-                                         for i in range(len(ncvx_cost_grad_cvx_last)) ])
-        ncvx_cost_grad_smth_last = tuple([np.asarray(ncvx_cost_grad_smth_last[i]).copy() 
-                                          for i in range(len(ncvx_cost_grad_smth_last)) ])
-        ncvx_cost_grad_comp_last = tuple([np.asarray(ncvx_cost_grad_comp_last[i]).copy() 
-                                          for i in range(len(ncvx_cost_grad_comp_last)) ])
-        
-        gf_comp_neg_last = np.minimum(0, ncvx_cost_grad_smth_last[1]) @ ncvx_cost_grad_cvx_last[1]
-        gf_smth_pos_last = np.maximum(0, ncvx_cost_grad_smth_last[1])
-        cvx_last = (np.asarray(cvx_last)).flatten(order='C')
-        gf_smth_pos_cvx_last = gf_smth_pos_last @ cvx_last
-
-        t_j_n = time.time() - t0_jax2np
-
-        # ---------------------------------------------------------------------------------
-        cvx_params = {
-            'f_bar': V_CT[params['i0']:params['i1'], :],
-            'A_bar': V_CT[params['i1']:params['i2'], :],
-            'B_bar': V_CT[params['i2']:params['i3'], :],
-            'C_bar': V_CT[params['i3']:params['i4'], :],
-            'z_bar': V_CT[params['i5']:params['i6'], :],
-            'X_last': X_last, 
-            'U_last': U_last,
-            'f_dt_last': ncvx_cost_grad_dt_last[0],
-            'gf_dt_last': ncvx_cost_grad_dt_last[1],
-            'f_ct_last': ncvx_cost_grad_ct_last[0],
-            'A_ct_last': ncvx_cost_grad_ct_last[1],
-            'B_ct_last': ncvx_cost_grad_ct_last[2],
-            'C_ct_last': ncvx_cost_grad_ct_last[3],
-            'f_comp_last': ncvx_cost_grad_comp_last[0],
-            'gf_comp_last': ncvx_cost_grad_comp_last[1],
-            'gf_comp_neg_last': gf_comp_neg_last,
-            'gf_smth_pos_last': gf_smth_pos_last,
-            'gf_smth_pos_cvx_last': gf_smth_pos_cvx_last,
-        }
-
-        set_parameters(cvx_prb, **cvx_params)
-
-        # Run the diagnostic check
-        check_cvxpy_scaling(cvx_params, small_tol=0.0, large_tol=1e5)
-        
-        if params['free_final_time']:
-
-            set_parameters(cvx_prb, 
-                           S_bar     = V_CT[params['i4']:params['i5'], :],
-                           S_last    = S_last,
-                           S_ct_last = ncvx_cost_grad_ct_last[4],
-                           )
+        if optional:
+            parameters = cvx_params   # Our IPM / chain builder needs no host copy.
+        else:
+            # Original CVXPY expression graph is unchanged. Transfer only its
+            # parameters, not the complete dense continuous-time trajectory.
+            required = {key: value for key, value in cvx_params.items()
+                        if key in cvx_prb.param_dict}
+            parameters, t_j_n = to_host(required)
+        parameter_started = time.perf_counter()
+        set_parameters(cvx_prb, **parameters)
+        parameter_seconds = time.perf_counter() - parameter_started
 
         while True:
 
-            set_parameters(cvx_prb, w_tr=w_tr)
-            
-            t0_cvx = time.time()
+            if optional:
+                weight_value = jnp.asarray(w_tr, dtype=jnp.float64)
+                jax.block_until_ready(weight_value)
+            else:
+                weight_value = w_tr
+            t0_cvx = time.perf_counter()
+            set_parameters(cvx_prb, w_tr=weight_value)
             status, X_new, U_new, S_new, nu_new = solve_parsed_problem(cvx_prb, params)
-            t_sub_prob = time.time() - t0_cvx
+            if optional:
+                record = cvx_prb.records[-1]
+                t_sub_prob = record['seconds'] + parameter_seconds
+                t_j_n += record['jax_to_numpy_seconds']
+                t_n_j += record['numpy_to_jax_seconds']
+                solvers_used.add(record['solver'])
+            else:
+                t_sub_prob = time.perf_counter() - t0_cvx + parameter_seconds
+                stats = cvx_prb.solver_stats
+                solvers_used.add(str(stats.solver_name) if stats else 'unknown')
+                (X_new, U_new, S_new, nu_new), upload = to_device(
+                    (X_new, U_new, S_new, nu_new))
+                t_n_j += upload
+            total_convex_seconds += t_sub_prob
+            convex_solve_count += 1
 
-            X_new_CT = fcn_dict['int_mult_jitted'](X_new, U_new, S_new)
-            nl_nu_new = (X_new[:, 1:] - X_new_CT[:, :, -1])
+            costs = evaluate(X_new, U_new, S_new, nu_new, cvx_params,
+                             jnp.asarray(w_tr, dtype=jnp.float64))
+            jax.block_until_ready(costs)   # Nonlinear work belongs to T-Ite, NOT transfer.
+            costs, download = to_host(costs)  # Only scalar cost/log values.
+            t_j_n += download
+            for name in cost_names:
+                cost_dict = dict_append(cost_dict, name, float(costs[name]))
+            trial_timings.append(dict(
+                iteration=ite + 1, T_Disc=t_dicr, T_SubP=t_sub_prob,
+                T_J_Np=t_j_n, T_Np_J=t_n_j))
 
-            ncvx_dt_cost = np.asarray(fcn_dict['ncvx_dt_fcn_jitted'](X_new))
-            ncvx_ct_cost = np.asarray(fcn_dict['ncvx_ct_fcn_jitted'](X_new_CT))
-            ncvx_comp_cost = np.asarray(fcn_dict['ncvx_comp_fcn_jitted'](X_new))
-
-            cost_dict = scp_noncvx_cost(X_new=X_new, U_new=U_new, S_new=S_new, 
-                                        X_last=X_last, U_last=U_last, S_last=S_last, 
-                                        nu_new=nu_new, nl_nu_new=nl_nu_new,
-                                        ncvx_dt_cost=ncvx_dt_cost, 
-                                        ncvx_ct_cost=ncvx_ct_cost,
-                                        ncvx_comp_cost=ncvx_comp_cost,
-                                        ncvx_cost_grad_dt_last=ncvx_cost_grad_dt_last, 
-                                        ncvx_cost_grad_ct_last=ncvx_cost_grad_ct_last,
-                                        ncvx_cost_grad_cvx_last=ncvx_cost_grad_cvx_last,
-                                        ncvx_cost_grad_smth_last=ncvx_cost_grad_smth_last,
-                                        ncvx_cost_grad_comp_last=ncvx_cost_grad_comp_last,
-                                        w_tr=w_tr, params=params, 
-                                        fcn_dict=fcn_dict,
-                                        cost_dict=cost_dict,
-                                    )
-            
             delta_J = last_cost - cost_dict['nlc'][-1]
             delta_L = last_cost - cost_dict['lc'][-1]
             rho = delta_J / delta_L
             
             if (ite == 0) or not(params['adaptive_step']):
-                X_last = X_new.copy()
-                U_last = U_new.copy()
-                S_last = S_new.copy()
+                X_last = X_new
+                U_last = U_new
+                S_last = S_new
 
                 last_cost = cost_dict['nlc'][-1]
                 note = 'First'
@@ -457,6 +439,7 @@ def prox_convex(
                         T_Disc = t_dicr,
                         T_SubP = t_sub_prob,
                         T_J_Np = t_j_n,
+                        T_Np_J = t_n_j,
                         D_NL   = delta_J,
                         D_L    = delta_L,
                         Rho    = rho,
@@ -466,11 +449,13 @@ def prox_convex(
                     )
 
                     print_ite(cost_dict)
+                    t0_ite = time.time()
+                    t_dicr = t_j_n = t_n_j = parameter_seconds = 0.0
 
                 else:
-                    X_last = X_new.copy()
-                    U_last = U_new.copy()
-                    S_last = copy.deepcopy(S_new)
+                    X_last = X_new
+                    U_last = U_new
+                    S_last = S_new
                     last_cost = cost_dict['nlc'][-1]
 
                     if rho < params['r1']:
@@ -494,6 +479,7 @@ def prox_convex(
                 T_Disc = t_dicr,
                 T_SubP = t_sub_prob,
                 T_J_Np = t_j_n,
+                T_Np_J = t_n_j,
                 D_NL   = delta_J,
                 D_L    = delta_L,
                 Rho    = rho,
@@ -507,8 +493,18 @@ def prox_convex(
     if not converged:
         print("Reached max iterations without convergence.")
         
-    cost_dict['X_new'] = X_last
-    cost_dict['U_new'] = U_last
-    cost_dict['S_new'] = S_last
-
+    (X_out, U_out, S_out), final_download = to_host((X_last, U_last, S_last))
+    compilation = array_compilation + getattr(cvx_prb, 'compile_seconds', 0.0) - compilation_before
+    cost_dict.update(
+        total_convex_seconds=total_convex_seconds,
+        total_discretization_seconds=sum(row['T_Disc'] for row in trial_timings),
+        total_jax_to_numpy_seconds=initial_download + final_download + sum(row['T_J_Np'] for row in trial_timings),
+        total_numpy_to_jax_seconds=initial_upload + sum(row['T_Np_J'] for row in trial_timings),
+        final_jax_to_numpy_seconds=final_download,
+        compilation_seconds=compilation,
+        total_scp_seconds=time.perf_counter() - call_started - compilation,
+        convex_solve_count=convex_solve_count, trial_timings=trial_timings,
+        solvers_used=sorted(solvers_used), converged=converged,
+        X_new=X_out, U_new=U_out, S_new=S_out,
+    )
     return cost_dict

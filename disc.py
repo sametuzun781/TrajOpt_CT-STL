@@ -138,13 +138,16 @@ def int_mult(X, U, S, params):
     
     return vmap(body)(jnp.arange(params['K'] - 1)).transpose(2, 0, 1) # (K-1) x steps x n_x -> n_x x K-1 x steps
 
-def jit_int_mult_fcn(params):
+def jit_int_mult_fcn(params, compile=True):
     def int_mult_wrapped(X, U, S):
         return int_mult(X, U, S, params)
-    return jit(int_mult_wrapped).lower(
+    function = jit(int_mult_wrapped)
+    if compile:
+        return function.lower(
                     params['X_last'],
                     params['U_last'],
                     params['S_last']).compile()
+    return function
 
 # ------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------------------
@@ -238,14 +241,39 @@ def cal_disc(X, U, S, params):
 
     return vmap(single_step)(jnp.arange(K - 1))
 
-def jit_cal_disc_fcn(params):
-    def cal_disc_wrapped(X, U, S):
-        return cal_disc(X, U, S, params)
-    return jit(cal_disc_wrapped).lower(
-                    params['X_last'],
-                    params['U_last'],
-                    params['S_last']).compile()
-
-# ------------------------------------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------------------------------------
+# Factories retain the original JAX implementation for custom models and GPU.
+def jit_cal_disc_fcn(params, compile=True):
+    mode = params.get("discretization_mode", "fast")
+    if mode not in ("fast", "native", "jax", "reference"):
+        raise ValueError("discretization_mode must be fast, native, jax, or reference")
+    endpoint = None
+    selected = mode
+    if mode == "reference":
+        function = jit(lambda X, U, S: cal_disc(X, U, S, params))
+    elif mode in ("fast", "native"):
+        from native_quad import eligibility, make_native_discretizer
+        valid, why = eligibility(params)
+        if mode == "native" and not valid:
+            raise ValueError("Native quadrotor path unavailable: " + why)
+        if valid:
+            try:
+                function = make_native_discretizer(params)
+                endpoint = make_native_discretizer(params, terminal_only=True)
+                selected = "native"
+            except (OSError, RuntimeError) as error:
+                if mode == "native":
+                    raise
+                import warnings
+                warnings.warn(f"Native discretization unavailable; using JAX: {error}", RuntimeWarning)
+                selected = "jax"
+        else:
+            selected = "jax"
+    if selected == "jax":
+        from sensitivity_rk4 import make_discretizer
+        function = make_discretizer(params)
+    if compile:
+        function = function.lower(params['X_last'], params['U_last'], params['S_last']).compile()
+    function.discretization_backend = selected
+    if endpoint is not None:
+        function.icore_terminal_discretizer = endpoint
+    return function

@@ -1,0 +1,13 @@
+{
+  "nx": 24,
+  "nu": 4,
+  "tangent_columns": 33,
+  "dense_tangent_elements": 792,
+  "dynamic_tangent_elements": 387,
+  "invariant_identity_elements": 17,
+  "structural_zero_elements": 388,
+  "dense_sparse_product_terms": 2454,
+  "compressed_product_terms": 934,
+  "state_dependency_edges": 74,
+  "input_dependency_edges": 6
+}

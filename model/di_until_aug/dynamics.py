@@ -1,4 +1,4 @@
-from jax import config, jit, jacfwd
+from jax import config, jit, jacfwd, jacrev
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
@@ -84,9 +84,13 @@ def dynamics(params: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
 
         return dx
 
+    autodiff = params.get('dynamics_autodiff', 'forward')
+    if autodiff not in ('forward', 'reverse'):
+        raise ValueError("dynamics_autodiff must be 'forward' or 'reverse'.")
+    derivative = jacrev if autodiff == 'reverse' else jacfwd
     params['f_func'] = jit(f)
-    params['A_func'] = jit(jacfwd(f, argnums=0))
-    params['B_func'] = jit(jacfwd(f, argnums=1))
+    params['A_func'] = jit(derivative(f, argnums=0))
+    params['B_func'] = jit(derivative(f, argnums=1))
 
     return params
 
