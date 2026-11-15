@@ -1,6 +1,6 @@
 import typing as T
 import numpy as np
-from disc import int_dyn
+from ctstl.disc import int_dyn
 
 def RUN(
     prox_results: T.Dict[str, np.ndarray],

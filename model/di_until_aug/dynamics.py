@@ -3,7 +3,7 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 import typing as T
-from utils import rotation_matrix
+from ctstl.utils import rotation_matrix
 
 def dynamics(params: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
     """

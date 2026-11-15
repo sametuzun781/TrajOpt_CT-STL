@@ -4,10 +4,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from application import load_application
-from disc import cal_disc, jit_cal_disc_fcn
-from jitting import jit_ncvx_ct_fcn_grad
-from full_scp import linearize_trajectory
+from ctstl.application import load_application
+from ctstl.disc import cal_disc, jit_cal_disc_fcn
+from ctstl.jitting import jit_ncvx_ct_fcn_grad
+from ctstl.full_scp import linearize_trajectory
 
 
 def error(a, b):
@@ -60,7 +60,7 @@ def test_quad_modes_and_changed_parameters(ad):
 
 def test_native_fallback_and_strict_mode(monkeypatch):
     _, p, _ = load_application()
-    from native_quad import eligibility
+    from native_discretization.native_quad import eligibility
     custom = dict(p, f_func=lambda x, u, t: p['f_func'](x, u, t)*1.001)
     assert not eligibility(custom)[0]
     assert jit_cal_disc_fcn(custom, compile=False).discretization_backend == 'jax'
@@ -68,7 +68,7 @@ def test_native_fallback_and_strict_mode(monkeypatch):
         jit_cal_disc_fcn(dict(custom, discretization_mode='native'), compile=False)
     def no_compiler(*args, **kwargs):
         raise RuntimeError('test compiler unavailable')
-    monkeypatch.setattr('native_quad.make_native_discretizer', no_compiler)
+    monkeypatch.setattr('native_discretization.native_quad.make_native_discretizer', no_compiler)
     with pytest.warns(RuntimeWarning, match='using JAX'):
         assert jit_cal_disc_fcn(p, compile=False).discretization_backend == 'jax'
     with pytest.raises(RuntimeError, match='compiler unavailable'):

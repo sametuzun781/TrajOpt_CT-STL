@@ -251,7 +251,7 @@ def jit_cal_disc_fcn(params, compile=True):
     if mode == "reference":
         function = jit(lambda X, U, S: cal_disc(X, U, S, params))
     elif mode in ("fast", "native"):
-        from native_quad import eligibility, make_native_discretizer
+        from native_discretization.native_quad import eligibility, make_native_discretizer
         valid, why = eligibility(params)
         if mode == "native" and not valid:
             raise ValueError("Native quadrotor path unavailable: " + why)
@@ -269,7 +269,7 @@ def jit_cal_disc_fcn(params, compile=True):
         else:
             selected = "jax"
     if selected == "jax":
-        from sensitivity_rk4 import make_discretizer
+        from ctstl.sensitivity_rk4 import make_discretizer
         function = make_discretizer(params)
     if compile:
         function = function.lower(params['X_last'], params['U_last'], params['S_last']).compile()

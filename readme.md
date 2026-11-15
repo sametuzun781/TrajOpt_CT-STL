@@ -36,6 +36,14 @@ falling back to JAX otherwise. `reference` uses the original RK4 implementation;
 `native` requires a supported model. `DYNAMICS_AD` applies to JAX/reference;
 native derivatives are analytic.
 
+## Code layout
+
+- `ctstl/`: SCP, STL, discretization, and shared utilities.
+- `solvers/`, `icore/`: solver adapters and the ICORE runtime.
+- `model/`, `native_discretization/`: example models and native CPU integration.
+- `tests/`: numerical checks and benchmarks.
+- `run_*.ipynb`, `run_example.py`: notebook and command-line entry points.
+
 #### Main Example
 
 **Task:** Eventually visit two dynamic waypoints and reach the end zone while always avoiding dynamic obstacles.

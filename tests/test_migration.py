@@ -6,11 +6,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from application import EXAMPLES, load_application
-from cvx import parse_convex_problem, solve_parsed_problem
-from full_scp import linearize_trajectory, evaluate_costs
-from ipm_adapter import OptionalConvexProblem
-from scp import set_parameters, scp_noncvx_cost
+from ctstl.application import EXAMPLES, load_application
+from solvers.cvx import parse_convex_problem, solve_parsed_problem
+from ctstl.full_scp import linearize_trajectory, evaluate_costs
+from solvers.ipm_adapter import OptionalConvexProblem
+from ctstl.scp import set_parameters, scp_noncvx_cost
 from tests.audit_chain import audit_chain
 
 

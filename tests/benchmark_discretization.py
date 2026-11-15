@@ -7,8 +7,8 @@ from time import perf_counter
 import jax
 import jax.numpy as jnp
 import numpy as np
-from application import load_application
-from disc import jit_cal_disc_fcn
+from ctstl.application import load_application
+from ctstl.disc import jit_cal_disc_fcn
 
 
 def main():

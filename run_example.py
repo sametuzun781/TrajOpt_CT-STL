@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from time import perf_counter
 import numpy as np
-from application import BACKENDS, EXAMPLES, load_application, prepare_solver
+from ctstl.application import BACKENDS, EXAMPLES, load_application, prepare_solver
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
             return result
         problem.solver.solve = checked
     try:
-        from scp import prox_convex
+        from ctstl.scp import prox_convex
         result = prox_convex(params, problem, functions)
         summary = dict(example=args.example, backend=args.backend, dynamics_ad=args.ad,
                        discretization=functions['cal_disc_jitted'].discretization_backend,

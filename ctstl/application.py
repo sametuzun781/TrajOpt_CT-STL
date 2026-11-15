@@ -2,7 +2,7 @@
 from pathlib import Path
 import json
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ('quad_flight', 'di_always_stc_aug', 'di_eventually_aug', 'di_until', 'di_until_aug')
 BACKENDS = ('cvxpy_qoco', 'qoco_native', 'jax_icore', 'icore_c', 'icore_cpp')
 
@@ -29,9 +29,9 @@ def load_application(backend='icore_cpp', autodiff='forward', discretization='fa
 
 def prepare_solver(params, functions, backend='icore_cpp'):
     if backend == 'cvxpy_qoco':
-        from cvx import parse_convex_problem
+        from solvers.cvx import parse_convex_problem
         return parse_convex_problem(params, functions)
-    from ipm_adapter import OptionalConvexProblem
+    from solvers.ipm_adapter import OptionalConvexProblem
     problem = OptionalConvexProblem(params, functions, backend,
                                     tolerance=params['qoco_options']['abstol'],
                                     qoco_options=params['qoco_options'])

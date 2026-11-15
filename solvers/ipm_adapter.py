@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from solvers import ChainSolver
 from solvers.chain_model import ChainQP
-from array_io import to_device
+from ctstl.array_io import to_device
 
 
 class OptionalConvexProblem:
@@ -67,7 +67,7 @@ class OptionalConvexProblem:
 
     def prepare(self, functions):
         """Compile array construction and prepare the solver without a warm-up solve."""
-        from full_scp import linearize_trajectory, evaluate_costs
+        from ctstl.full_scp import linearize_trajectory, evaluate_costs
         p = self.params
         X, U, S = (jnp.asarray(p[name], dtype=jnp.float64)
                    for name in ('X_last', 'U_last', 'S_last'))

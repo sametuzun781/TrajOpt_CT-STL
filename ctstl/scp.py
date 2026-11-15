@@ -4,9 +4,9 @@ import typing as T
 import numpy as np
 import jax
 import jax.numpy as jnp
-from array_io import to_host, to_device
-from utils import dict_append, update_cost_dict, print_ite
-from cvx import solve_parsed_problem
+from ctstl.array_io import to_host, to_device
+from ctstl.utils import dict_append, update_cost_dict, print_ite
+from solvers.cvx import solve_parsed_problem
 
 def scp_noncvx_cost(
     X_new                    : np.ndarray = None,
@@ -263,7 +263,7 @@ def prox_convex(
 
     call_started = time.perf_counter()
     # Python makes scalar decisions; trajectories/Jacobians stay on the device.
-    from full_scp import linearize_trajectory, evaluate_costs
+    from ctstl.full_scp import linearize_trajectory, evaluate_costs
     model = fcn_dict['cvx_cons_fcn'].__module__.split('.')[1]
     optional = hasattr(cvx_prb, 'solve_ipm')
     compilation_before = getattr(cvx_prb, 'compile_seconds', 0.0)

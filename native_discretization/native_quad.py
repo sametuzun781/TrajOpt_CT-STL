@@ -23,13 +23,13 @@ import jax.numpy as jnp
 import jaxlib
 import numpy as np
 
-ROOT=Path(__file__).resolve().parent
+ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'native_discretization'
 _LIBRARIES={}
 
 def source_signature():
     source=(ROOT/'model/quad_flight/dynamics.py').read_text()
-    utility=(ROOT/'utils.py').read_text()
+    utility=(ROOT/'ctstl/utils.py').read_text()
     rotation=next(n for n in ast.parse(utility).body if isinstance(n,ast.FunctionDef) and n.name=='rotation_matrix')
     return hashlib.sha256((source+'\n'+ast.get_source_segment(utility,rotation)).encode()).hexdigest()
 

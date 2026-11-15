@@ -6,9 +6,9 @@ from jax import vmap
 
 import typing as T
 import numpy as np
-from optional_cvxpy import cp
-from utils import dict_append
-from stl import conjunction, disjunction, UNTIL
+from solvers.optional_cvxpy import cp
+from ctstl.utils import dict_append
+from ctstl.stl import conjunction, disjunction, UNTIL
 
 def cvx_cost_fcn(
     X:    np.ndarray,
