@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from ctstl.application import load_application
+from ctstl.application import EXAMPLES, load_application
 from ctstl.disc import cal_disc, jit_cal_disc_fcn
 from ctstl.jitting import jit_ncvx_ct_fcn_grad
 from ctstl.full_scp import linearize_trajectory
@@ -75,8 +75,9 @@ def test_native_fallback_and_strict_mode(monkeypatch):
         jit_cal_disc_fcn(dict(p, discretization_mode='native'), compile=False)
 
 
-def test_nonzero_ct_keeps_history_and_contractions():
-    _, p, functions = load_application()
+@pytest.mark.parametrize('example', EXAMPLES)
+def test_nonzero_ct_keeps_history_and_contractions(example):
+    _, p, functions = load_application(example=example)
     def cost(X, p):
         return jnp.array([jnp.sum(X[2]**2)*.003+jnp.sum(jnp.sin(X[1]))*.002])
     args = tuple(jnp.asarray(p[k]) for k in ('X_last', 'U_last', 'S_last'))

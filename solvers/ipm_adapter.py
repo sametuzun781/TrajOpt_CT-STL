@@ -67,22 +67,14 @@ class OptionalConvexProblem:
 
     def prepare(self, functions):
         """Compile array construction and prepare the solver without a warm-up solve."""
-        from ctstl.full_scp import linearize_trajectory, evaluate_costs
+        from ctstl.full_scp import compile_array_kernels
         p = self.params
         X, U, S = (jnp.asarray(p[name], dtype=jnp.float64)
                    for name in ('X_last', 'U_last', 'S_last'))
         if not hasattr(self, '_array_linearize'):
             started = perf_counter()
-            linearize = jax.jit(lambda X, U, S:
-                linearize_trajectory(X, U, S, p, functions))
-            self._array_linearize = linearize.lower(X, U, S).compile()
-            sample = self._array_linearize(X, U, S)
-            jax.block_until_ready(sample)
-            costs = jax.jit(lambda X, U, S, nu, values, weight:
-                evaluate_costs(X, U, S, nu, values, weight, p, functions, self.model))
-            self._array_costs = costs.lower(X, U, S,
-                jnp.zeros((p['n_x'], p['K'] - 1)), sample,
-                jnp.asarray(p['w_ptr'], dtype=jnp.float64)).compile()
+            self._array_linearize, self._array_costs, self._cost_names = compile_array_kernels(
+                X, U, S, p, functions, self.model)
             self._build_compile_seconds += perf_counter() - started
         values = self._array_linearize(X, U, S)
         values['w_tr'] = jnp.asarray(p['w_ptr'], dtype=jnp.float64)

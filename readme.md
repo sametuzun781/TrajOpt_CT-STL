@@ -31,7 +31,7 @@ DYNAMICS_AD = "forward"      # forward or reverse
 DISCRETIZATION_MODE = "fast" # fast, jax, reference, or native
 ```
 
-`fast` selects certified native CPU discretization for supported Quadrotor models,
+`fast` selects certified native CPU discretization for the Quadrotor and double-integrator models,
 falling back to JAX otherwise. `reference` uses the original RK4 implementation;
 `native` requires a supported model. `DYNAMICS_AD` applies to JAX/reference;
 native derivatives are analytic.

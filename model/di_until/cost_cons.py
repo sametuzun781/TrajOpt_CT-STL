@@ -157,7 +157,7 @@ def ncvx_ct_fcn(
 
     X = X_CT.reshape((params['n_x'], -1))
 
-    z = jnp.sum(jnp.array(0.0) * X)
+    z = jnp.array(0.0, dtype=X_CT.dtype)
     if 'until_pos_spd' in params['name_ct_fcn']:
 
         speeds = jnp.linalg.norm(X[3:6, :] + 1e-8, axis=0)

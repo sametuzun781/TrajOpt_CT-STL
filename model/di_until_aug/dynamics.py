@@ -89,6 +89,7 @@ def dynamics(params: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
         raise ValueError("dynamics_autodiff must be 'forward' or 'reverse'.")
     derivative = jacrev if autodiff == 'reverse' else jacfwd
     params['f_func'] = jit(f)
+    params['_native_di_field'] = params['f_func']
     params['A_func'] = jit(derivative(f, argnums=0))
     params['B_func'] = jit(derivative(f, argnums=1))
 

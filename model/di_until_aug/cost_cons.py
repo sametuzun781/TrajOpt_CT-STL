@@ -159,5 +159,5 @@ def ncvx_ct_fcn(
     
     # n_ct x 1
     X = X_CT.reshape((params['n_x'], -1))
-    z = jnp.sum(jnp.array(0.0) * X)
+    z = jnp.array(0.0, dtype=X_CT.dtype)
     return jnp.stack([z])

@@ -1,6 +1,7 @@
 """Application selector for native QOCO and the public ICORE Solver."""
 from time import perf_counter
 import jax
+import numpy as np
 from icore import Solver
 
 
@@ -25,7 +26,8 @@ class ChainSolver:
     def _host(qp):
         jax.block_until_ready(qp)
         started = perf_counter()
-        result = jax.device_get(qp)
+        # Ready CPU arrays expose read-only NumPy views; GPU uses bulk transfer.
+        result = jax.tree.map(np.asarray, qp) if jax.default_backend() == 'cpu' else jax.device_get(qp)
         return result, perf_counter() - started
 
     def prepare(self, qp):
@@ -50,7 +52,8 @@ class ChainSolver:
     def solve(self, qp):
         before_compile, before_setup = self.compile_seconds, self.setup_seconds
         self.prepare(qp)
-        host_qp, download = self._host(qp)
+        # ICORE's JAX update accepts the existing device arrays directly.
+        host_qp, download = (qp, 0.) if self.backend == 'jax_icore' else self._host(qp)
         started = perf_counter()
         if self.backend == "qoco_native":
             model = self.layout.build(host_qp)

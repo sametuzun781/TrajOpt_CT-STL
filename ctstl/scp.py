@@ -263,7 +263,7 @@ def prox_convex(
 
     call_started = time.perf_counter()
     # Python makes scalar decisions; trajectories/Jacobians stay on the device.
-    from ctstl.full_scp import linearize_trajectory, evaluate_costs
+    from ctstl.full_scp import compile_array_kernels
     model = fcn_dict['cvx_cons_fcn'].__module__.split('.')[1]
     optional = hasattr(cvx_prb, 'solve_ipm')
     compilation_before = getattr(cvx_prb, 'compile_seconds', 0.0)
@@ -279,15 +279,8 @@ def prox_convex(
     # Reuse the very same array equations as full-JIT; no new model/solver.
     if not hasattr(cvx_prb, '_array_linearize'):
         started = time.perf_counter()
-        linearize = jax.jit(lambda X, U, S: linearize_trajectory(X, U, S, params, fcn_dict))
-        cvx_prb._array_linearize = linearize.lower(X_last, U_last, S_last).compile()
-        sample = cvx_prb._array_linearize(X_last, U_last, S_last)
-        jax.block_until_ready(sample)
-        costs = jax.jit(lambda X, U, S, nu, values, weight:
-            evaluate_costs(X, U, S, nu, values, weight, params, fcn_dict, model))
-        zero_defect = jnp.zeros((params['n_x'], params['K'] - 1))
-        cvx_prb._array_costs = costs.lower(
-            X_last, U_last, S_last, zero_defect, sample, jnp.asarray(w_tr)).compile()
+        cvx_prb._array_linearize, cvx_prb._array_costs, cvx_prb._cost_names = compile_array_kernels(
+            X_last, U_last, S_last, params, fcn_dict, model)
         array_compilation = time.perf_counter() - started
         print(f'Array-kernel preparation: {1000.0 * array_compilation:.3f} ms', flush=True)
     else:
@@ -311,6 +304,7 @@ def prox_convex(
                        initial_values, jnp.asarray(0.0))
     jax.block_until_ready(initial)
     initial, initial_download = to_host(initial)
+    initial = dict(zip(cvx_prb._cost_names, initial))
     initial['lc'] = 0.0  # No convex trial in the original initial row.
     cost_dict = update_cost_dict({}, Ite=0, T_Ite=0., T_Disc=0.,
                                  T_SubP=0., T_J_Np=initial_download, T_Np_J=initial_upload)
@@ -384,6 +378,7 @@ def prox_convex(
                              jnp.asarray(w_tr, dtype=jnp.float64))
             jax.block_until_ready(costs)   # Nonlinear work belongs to T-Ite, NOT transfer.
             costs, download = to_host(costs)  # Only scalar cost/log values.
+            costs = dict(zip(cvx_prb._cost_names, costs))
             t_j_n += download
             for name in cost_names:
                 cost_dict = dict_append(cost_dict, name, float(costs[name]))

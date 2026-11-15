@@ -142,6 +142,14 @@ def jit_int_mult_fcn(params, compile=True):
     def int_mult_wrapped(X, U, S):
         return int_mult(X, U, S, params)
     function = jit(int_mult_wrapped)
+    if params.get('discretization_mode', 'fast') in ('fast', 'native'):
+        from native_discretization.native_di import eligibility, make_native_discretizer
+        if eligibility(params)[0]:
+            try:
+                function = make_native_discretizer(params, states_only=True)
+            except (OSError, RuntimeError):
+                if params.get('discretization_mode') == 'native':
+                    raise
     if compile:
         return function.lower(
                     params['X_last'],
@@ -253,8 +261,11 @@ def jit_cal_disc_fcn(params, compile=True):
     elif mode in ("fast", "native"):
         from native_discretization.native_quad import eligibility, make_native_discretizer
         valid, why = eligibility(params)
+        if not valid:
+            from native_discretization.native_di import eligibility, make_native_discretizer
+            valid, why = eligibility(params)
         if mode == "native" and not valid:
-            raise ValueError("Native quadrotor path unavailable: " + why)
+            raise ValueError("Native discretization path unavailable: " + why)
         if valid:
             try:
                 function = make_native_discretizer(params)

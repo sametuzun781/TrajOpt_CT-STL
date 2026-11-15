@@ -7,19 +7,21 @@ from time import perf_counter
 import jax
 import jax.numpy as jnp
 import numpy as np
-from ctstl.application import load_application
+from ctstl.application import EXAMPLES, load_application
 from ctstl.disc import jit_cal_disc_fcn
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--example', choices=EXAMPLES, default='quad_flight')
+    parser.add_argument('--ad', choices=('forward', 'reverse'), default='forward')
     parser.add_argument('--snapshot', type=Path, help='Optional NPZ with X, U, S arrays.')
     parser.add_argument('--repetitions', type=int, default=40)
     parser.add_argument('--output', type=Path, default=Path('runs/discretization-benchmark.json'))
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error('--repetitions must be positive')
-    _, p, _ = load_application()
+    _, p, _ = load_application(example=args.example, autodiff=args.ad)
     if args.snapshot:
         with np.load(args.snapshot) as arrays:
             trajectory = tuple(jnp.asarray(arrays[k]) for k in ('X', 'U', 'S'))
@@ -42,7 +44,7 @@ def main():
             jax.block_until_ready(methods[mode](*trajectory))
             samples[mode].append(1000*(perf_counter()-start))
     means = {mode: float(np.mean(v)) for mode, v in samples.items()}
-    result = dict(platform=platform.platform(), jax=jax.__version__, snapshot=str(args.snapshot),
+    result = dict(example=args.example, dynamics_ad=args.ad, platform=platform.platform(), jax=jax.__version__, snapshot=str(args.snapshot),
                   repetitions=args.repetitions, mean_ms=means, normalized_errors=errors,
                   native_speedup={m: means[m]/means['native'] for m in ('reference', 'jax')}, samples_ms=samples)
     args.output.parent.mkdir(parents=True, exist_ok=True)

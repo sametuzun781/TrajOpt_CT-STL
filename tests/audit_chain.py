@@ -2,6 +2,7 @@
 import numpy as np
 
 def audit_chain(qp,result,tolerance=1e-8,reference=None):
+    qp=type(qp)(*(np.asarray(value) for value in qp))
     y,t=np.asarray(result['stage_y']),np.asarray(result['epigraph'])
     s=tuple(np.asarray(v) for v in result['s'])
     z=tuple(np.asarray(v) for v in result['z'])

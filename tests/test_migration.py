@@ -36,6 +36,9 @@ def test_five_solvers_match_original_model(example):
         try:
             set_parameters(problem, **values)
             _, x, u, s, nu = problem.solve()
+            if backend == 'jax_icore':
+                assert all(isinstance(a, jax.Array) for a in problem.solver.last_model)
+                assert problem.records[-1]['jax_to_numpy_seconds'] == 0.
             x, u, s, nu = jax.device_get((x, u, s, nu))
             if backend != 'qoco_native':
                 audit = audit_chain(problem.solver.last_model, problem.solver.last_result)

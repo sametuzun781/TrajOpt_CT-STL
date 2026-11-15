@@ -62,6 +62,15 @@ def disjunction(c: float, p: int, weights: jnp.ndarray, *args: T.Tuple[T.Any]) -
     h_mor = conjunction(c, p, weights, neg_args)
     return -h_mor
 
+def _conjunction_from_sums(c, p, weight, negative_power, log_product, any_negative):
+    # Inactive geometric branches must stay finite for reverse-mode AD.
+    safe_weight = jnp.where(any_negative, 1., weight)
+    safe_log = jnp.where(any_negative, 0., log_product)
+    positive = jnp.sqrt((c**safe_weight + jnp.exp(safe_log))**(1./safe_weight)) - jnp.sqrt(c)
+    negative = jnp.sqrt(c) - jnp.sqrt((c**p + negative_power/weight)**(1./p))
+    return jnp.where(any_negative, negative, positive)
+
+
 def UNTIL(
     c: float,
     p: int,
@@ -71,30 +80,19 @@ def UNTIL(
     f: jnp.ndarray,
     g: jnp.ndarray,
 ) -> jnp.ndarray:
-    """
-    JAX‐jit‐compatible version of UNTIL. Uses a Python loop over K (static)
-    so that slicing w_f[:i+1] and f[:i+1] always sees a concrete Python int.
-    """
-    K = f.shape[0]
-    s_list = []
-
-    # Python loop unrolls at trace‐time (K is static), so slicing is OK
-    for i in range(int(K)):
-        # build prefix‐arrays of length (i+1)
-        w_pref = w_f[: i + 1]
-        f_pref = f[: i + 1]
-
-        # “rolling conjunction” over the prefix
-        y_i = conjunction(c, p, w_pref, f_pref)
-
-        # then conjunction with g[i]
-        pair = jnp.array([y_i, g[i]])
-        s_i  = conjunction(c, p, w_fg[:2], pair)
-
-        s_list.append(s_i)
-
-    # build full s‐vector and disjunction‐reduce it
-    s = jnp.stack(s_list)           # shape (K,)
-    z = disjunction(c, p, w_g, s)  # scalar
-
-    return z
+    """Original weighted GMSR UNTIL, with linear-time prefix reductions."""
+    negative = f <= 0
+    prefix = _conjunction_from_sums(
+        c, p, jnp.cumsum(w_f),
+        jnp.cumsum(w_f*jnp.where(negative, f, 0.)**(2*p)),
+        jnp.cumsum(2*w_f*jnp.log(jnp.where(negative, 1., f))),
+        jnp.cumsum(negative.astype(jnp.int32)) > 0)
+    pair = jnp.stack((prefix, g), axis=1)
+    negative = pair <= 0
+    weights = jnp.asarray(w_fg[:2])
+    values = _conjunction_from_sums(
+        c, p, weights.sum(),
+        jnp.sum(weights*jnp.where(negative, pair, 0.)**(2*p), axis=1),
+        jnp.sum(2*weights*jnp.log(jnp.where(negative, 1., pair)), axis=1),
+        jnp.any(negative, axis=1))
+    return disjunction(c, p, w_g, values)

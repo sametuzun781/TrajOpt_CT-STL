@@ -1,7 +1,26 @@
 """JAX model linearization and objective evaluation used by the SCP loop."""
+import jax
 import jax.numpy as jnp
 
 __all__ = ["linearize_trajectory", "evaluate_costs"]
+
+
+def compile_array_kernels(X, U, S, params, functions, model):
+    """Compile shared kernels; download cost scalars as one small array."""
+    linearize = jax.jit(lambda X, U, S: linearize_trajectory(X, U, S, params, functions))
+    linearize = linearize.lower(X, U, S).compile()
+    sample = linearize(X, U, S)
+    jax.block_until_ready(sample)
+    zero = jnp.zeros((params['n_x'], params['K']-1))
+    weight = jnp.asarray(params['w_ptr'], dtype=jnp.float64)
+    def costs(X, U, S, nu, values, weight):
+        return evaluate_costs(X, U, S, nu, values, weight, params, functions, model)
+    names = tuple(sorted(jax.eval_shape(costs, X, U, S, zero, sample, weight)))
+    def packed(X, U, S, nu, values, weight):
+        result = costs(X, U, S, nu, values, weight)
+        return jnp.stack([result[name] for name in names])
+    evaluate = jax.jit(packed).lower(X, U, S, zero, sample, weight).compile()
+    return linearize, evaluate, names
 
 
 def linearize_trajectory(X, U, S, params, functions):
