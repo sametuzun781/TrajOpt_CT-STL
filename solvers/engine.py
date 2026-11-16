@@ -1,7 +1,9 @@
 """Application selector for native QOCO and the public ICORE Solver."""
 from time import perf_counter
-from icore import Solver
-from ctstl.array_io import to_host
+from solvers import require_icore
+from ctstl.utils import to_host
+
+Solver = require_icore().Solver
 
 
 class ChainSolver:
@@ -92,3 +94,12 @@ class ChainSolver:
 
     def __del__(self):
         self.close()
+
+
+def chain_objective(qp, y, xp=None):
+    if xp is None:
+        import numpy as xp
+    defect = (xp.einsum("kij,kj->ki",qp.left,y[:-1])
+              + xp.einsum("kij,kj->ki",qp.right,y[1:]) + qp.offset)
+    return (.5*xp.sum(qp.hessian*(y-qp.center)**2)
+            + xp.sum(qp.linear*y) + xp.sum(qp.l1_weight*xp.abs(defect)))

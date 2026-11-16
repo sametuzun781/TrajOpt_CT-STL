@@ -1,6 +1,6 @@
 import typing as T
 import numpy as np
-from solvers.optional_cvxpy import cp
+from solvers import cp
 
 def parse_convex_problem(params : T.Dict[str, T.Any],
                          fcn_dict : T.Dict[str, T.Any]):

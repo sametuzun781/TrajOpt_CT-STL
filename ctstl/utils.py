@@ -1,3 +1,6 @@
+"""Shared array boundaries, timing, plotting and geometry helpers."""
+import jax
+from time import perf_counter
 from jax import config, jacfwd, vmap, Array
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
@@ -10,6 +13,32 @@ from PIL import Image
 # ------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------------------------------------
+
+ARRAY_FLOW_VERSION = "compiled-solution-input-r2"
+
+
+def to_host(values):
+    """Fetch a ready pytree; CPU views are read-only and the wait is not timed."""
+    jax.block_until_ready(values)
+    started = perf_counter()
+    result = (jax.tree.map(np.asarray, values) if jax.default_backend() == 'cpu'
+              else jax.device_get(values))
+    return result, perf_counter() - started
+
+
+def to_device(values, *, dtype=None):
+    """Keep device arrays; time any required upload or explicit dtype conversion."""
+    leaves = jax.tree.leaves(values)
+    ready = all(isinstance(value, jax.Array) and
+                (dtype is None or value.dtype == dtype) for value in leaves)
+    if ready:
+        return values, 0.0
+    started = perf_counter()
+    result = (jax.device_put(values) if dtype is None else
+              jax.tree.map(lambda value: jnp.asarray(value, dtype=dtype), values))
+    jax.block_until_ready(result)
+    return result, perf_counter() - started
+
 
 ### Profiling
 def profile_with_cprofile(func, *args, filename="profiling_results.prof", **kwargs):

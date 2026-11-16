@@ -5,9 +5,10 @@ from types import SimpleNamespace
 import numpy as np
 import jax
 import jax.numpy as jnp
-from solvers import ChainSolver
-from solvers.chain_model import ChainQP
-from ctstl.array_io import to_device
+from solvers import ChainSolver, require_icore
+from ctstl.utils import to_device
+
+ChainQP = require_icore().ChainQP
 
 
 class OptionalConvexProblem:

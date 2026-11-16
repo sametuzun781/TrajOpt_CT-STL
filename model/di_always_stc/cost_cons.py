@@ -6,7 +6,7 @@ from jax import vmap
 
 import typing as T
 import numpy as np
-from solvers.optional_cvxpy import cp
+from solvers import cp
 from ctstl.utils import dict_append
 from ctstl.stl import conjunction, disjunction, UNTIL
 

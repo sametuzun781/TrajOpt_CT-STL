@@ -9,19 +9,29 @@ Use Python 3.12 and a C/C++ compiler (macOS: `xcode-select --install`).
 ```bash
 git clone https://github.com/sametuzun781/TrajOpt_CT-STL.git
 cd TrajOpt_CT-STL
-python3.12 -m venv .venv
-source .venv/bin/activate
+python3.12 -m venv .venv312
+source .venv312/bin/activate
 python -m pip install -r requirements-comparators.txt
-python -m ipykernel install --user --name ct-stl-icore
+python tools/install_icore.py
+python -m ipykernel install --user --name ct-stl-icore --display-name "CT-STL ICORE (Python 3.12)"
 ```
 
-Open a `run_*.ipynb` notebook with the `ct-stl-icore` kernel, or run:
+Open a `run_*.ipynb` notebook and select **CT-STL ICORE (Python 3.12)**,
+or select this repository's `.venv312/bin/python` in VS Code. Restarting an old
+kernel does not switch its Python environment. Alternatively, run:
 
 ```bash
 python run_example.py --backend icore_cpp --audit
 ```
 
-Native libraries build on first use. Notebook plots require LaTeX.
+ICORE is installed separately from commit `a63ebffb005725a02d2c3e4247fb73aec453e590`.
+The installer verifies the source checksum and the installed Solver/ChainQP API;
+benchmark and HPIPM files are omitted. Internet is needed for the first source
+installation. Native libraries build on first use. Notebook plots require LaTeX.
+
+For numerical checks, install `pytest` and run `python -m pytest tests -q`.
+The notebook-cleanliness check assumes saved outputs have been cleared; use
+`-k 'not test_notebooks_are_clean'` when retaining local notebook outputs.
 
 ## Options
 
@@ -39,9 +49,10 @@ native derivatives are analytic.
 ## Code layout
 
 - `ctstl/`: SCP, STL, discretization, and shared utilities.
-- `solvers/`, `icore/`: solver adapters and the ICORE runtime.
+- `solvers/`: adapters for the separately installed ICORE runtime and QOCO.
 - `model/`, `native_discretization/`: example models and native CPU integration.
 - `tests/`: numerical checks and benchmarks.
+- `tools/install_icore.py`: install the pinned ICORE dependency in the active environment.
 - `run_*.ipynb`, `run_example.py`: notebook and command-line entry points.
 
 #### Main Example

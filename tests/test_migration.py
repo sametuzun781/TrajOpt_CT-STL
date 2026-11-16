@@ -1,6 +1,9 @@
 """Compare all adapters against the existing CVXPY model at the same iterate."""
 import gc
 import json
+import sys
+import types
+from importlib.metadata import version
 from pathlib import Path
 import jax
 import jax.numpy as jnp
@@ -12,6 +15,35 @@ from ctstl.full_scp import linearize_trajectory, evaluate_costs
 from solvers.ipm_adapter import OptionalConvexProblem
 from ctstl.scp import set_parameters, scp_noncvx_cost
 from tests.audit_chain import audit_chain
+
+
+def test_installed_icore_runtime():
+    from solvers import require_icore
+    from solvers.qoco_native.build import QOCO_SHA256, _sha
+    from tools.install_icore import VERSION, runtime_ok
+    runtime = require_icore()
+    package = Path(runtime.__file__).resolve().parent
+    root = Path(__file__).resolve().parents[1]
+    assert package != root / 'icore'
+    assert version('icore') == VERSION
+    assert runtime_ok()
+    assert not (package / 'benchmark.py').exists()
+    assert not (package / 'vendor/hpipm').exists()
+    for name in ('LICENSE', 'LICENSE-NOTE.md', 'THIRD_PARTY_NOTICES.md'):
+        assert (package / name).is_file()
+    assert _sha(package / 'vendor/qoco/qoco-source.tar.gz') == QOCO_SHA256
+
+
+def test_missing_runtime_reports_active_kernel(monkeypatch):
+    from solvers import require_icore
+    # A leftover local directory can import successfully as a namespace package.
+    monkeypatch.setitem(sys.modules, 'icore', types.ModuleType('icore'))
+    with pytest.raises(ImportError) as caught:
+        require_icore()
+    message = str(caught.value)
+    assert sys.executable in message
+    assert 'CT-STL ICORE (Python 3.12)' in message
+    assert 'tools/install_icore.py' in message
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +124,7 @@ def test_notebooks_are_clean():
     root = Path(__file__).resolve().parents[1]
     for path in root.glob('run_*.ipynb'):
         notebook = json.loads(path.read_text())
+        assert notebook['metadata']['kernelspec']['name'] == 'ct-stl-icore'
         for cell in notebook['cells']:
             if cell['cell_type'] == 'code':
                 assert cell['outputs'] == [], path.name

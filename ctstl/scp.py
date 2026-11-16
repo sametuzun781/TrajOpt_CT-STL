@@ -4,8 +4,7 @@ import typing as T
 import numpy as np
 import jax
 import jax.numpy as jnp
-from ctstl.array_io import to_host, to_device
-from ctstl.utils import dict_append, update_cost_dict, print_ite
+from ctstl.utils import to_host, to_device, dict_append, update_cost_dict, print_ite
 from solvers.cvx import solve_parsed_problem
 
 def scp_noncvx_cost(
