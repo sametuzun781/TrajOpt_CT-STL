@@ -56,6 +56,28 @@ def make_anim(load_from, save_to, duration, fps, anim_format):
         video.release()
 
 ### Print
+def print_run_summary(result, params, functions):
+    """Show totals and per-call timings in ms, separating one-time boundaries."""
+    trials = result['trial_timings']
+    calls = result['convex_solve_count']
+    linearizations = len({trial['iteration'] for trial in trials})
+    print('Discretization:', functions['cal_disc_jitted'].discretization_backend)
+    print('Solver:', result['solvers_used'], '| Converged:', result['converged'])
+    print('Linearizations / convex calls:', linearizations, '/', calls)
+    rows = (
+        ('Discretization / linearization', result['total_discretization_seconds'], linearizations),
+        ('Convex calls (incl. solution input/decode)', result['total_convex_seconds'], calls),
+        ('Explicit JAX -> NumPy (loop)', sum(t['T_J_Np'] for t in trials), calls),
+        ('Explicit NumPy -> JAX (loop)', sum(t['T_Np_J'] for t in trials), calls),
+    )
+    for label, seconds, count in rows:
+        print(f'{label}: {1000 * seconds:.3f} ms total; {1000 * seconds / max(count, 1):.4f} ms/call')
+    startup = result['initial_jax_to_numpy_seconds'] + result['initial_numpy_to_jax_seconds']
+    print(f"Startup / final transitions [ms]: {1000 * startup:.3f} / {1000 * result['final_jax_to_numpy_seconds']:.3f}")
+    duration = np.sum(result['S_new']) if params['free_final_time'] else params['t_f']
+    print('Flight time [s]:', float(duration))
+
+
 def dict_append(dict, key, value):
     if key not in dict:
         dict[key] = []

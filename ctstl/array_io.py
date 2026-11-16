@@ -7,15 +7,17 @@ on CPU unless the library needs one. NumPy results must be treated as read-only.
 from time import perf_counter
 import jax
 import jax.numpy as jnp
+import numpy as np
 
-ARRAY_FLOW_VERSION = "minimal-array-timing-r1"
+ARRAY_FLOW_VERSION = "compiled-solution-input-r2"
 
 
 def to_host(values):
     """Fetch a ready pytree once and time only host materialization."""
     jax.block_until_ready(values)
     started = perf_counter()
-    result = jax.device_get(values)
+    result = (jax.tree.map(np.asarray, values) if jax.default_backend() == 'cpu'
+              else jax.device_get(values))
     return result, perf_counter() - started
 
 

@@ -277,20 +277,23 @@ def decode_solution(solution, qp, params):
 
 
 def run_subproblem(owner, values):
-    """Keep trajectories on JAX and report computation and transfer times separately."""
+    """Keep trajectories on JAX; compiled decode accepts owned NumPy solutions."""
     values, upload_seconds = to_device(values, dtype=jnp.float64)
     compilation_before = owner.compile_seconds
     setup_before = owner.setup_seconds
     qp, build_seconds = owner.build_qp(values)
     owner.compile_decode(qp)
     y, record = owner.solver.solve(qp)
-    y, result_upload = to_device(y)
     started = perf_counter()
+    # Compiled JAX functions accept NumPy inputs directly. Avoid an extra
+    # device_put dispatch; any input copy is included in the decode timer.
     solution = owner._compiled_decode(y, qp)
     jax.block_until_ready(solution)
+    decode_seconds = perf_counter() - started
     record = dict(record)
-    record['seconds'] += build_seconds + perf_counter() - started
-    record['numpy_to_jax_seconds'] += upload_seconds + result_upload
+    record['seconds'] += build_seconds + decode_seconds
+    record['solution_decode_seconds'] = decode_seconds
+    record['numpy_to_jax_seconds'] += upload_seconds
     record['compilation_seconds'] = owner.compile_seconds - compilation_before
     record['setup_seconds'] = owner.setup_seconds - setup_before
     owner.records.append(record)

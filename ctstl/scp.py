@@ -272,9 +272,11 @@ def prox_convex(
     w_tr = params['w_ptr']
     converged = False
     total_convex_seconds = 0.0
+    total_solution_decode_seconds = 0.0
     convex_solve_count = 0
     solvers_used = set()
     trial_timings = []
+    previous_weight = weight_value = None
 
     # Reuse the very same array equations as full-JIT; no new model/solver.
     if not hasattr(cvx_prb, '_array_linearize'):
@@ -350,16 +352,16 @@ def prox_convex(
 
         while True:
 
-            if optional:
-                weight_value = jnp.asarray(w_tr, dtype=jnp.float64)
-                jax.block_until_ready(weight_value)
-            else:
-                weight_value = w_tr
+            if previous_weight != w_tr:
+                weight_value, upload = to_device(np.asarray(w_tr, dtype=np.float64))
+                t_n_j += upload
+                previous_weight = w_tr
             t0_cvx = time.perf_counter()
-            set_parameters(cvx_prb, w_tr=weight_value)
+            set_parameters(cvx_prb, w_tr=weight_value if optional else w_tr)
             status, X_new, U_new, S_new, nu_new = solve_parsed_problem(cvx_prb, params)
             if optional:
                 record = cvx_prb.records[-1]
+                total_solution_decode_seconds += record['solution_decode_seconds']
                 t_sub_prob = record['seconds'] + parameter_seconds
                 t_j_n += record['jax_to_numpy_seconds']
                 t_n_j += record['numpy_to_jax_seconds']
@@ -374,8 +376,7 @@ def prox_convex(
             total_convex_seconds += t_sub_prob
             convex_solve_count += 1
 
-            costs = evaluate(X_new, U_new, S_new, nu_new, cvx_params,
-                             jnp.asarray(w_tr, dtype=jnp.float64))
+            costs = evaluate(X_new, U_new, S_new, nu_new, cvx_params, weight_value)
             jax.block_until_ready(costs)   # Nonlinear work belongs to T-Ite, NOT transfer.
             costs, download = to_host(costs)  # Only scalar cost/log values.
             costs = dict(zip(cvx_prb._cost_names, costs))
@@ -492,9 +493,12 @@ def prox_convex(
     compilation = array_compilation + getattr(cvx_prb, 'compile_seconds', 0.0) - compilation_before
     cost_dict.update(
         total_convex_seconds=total_convex_seconds,
+        total_solution_decode_seconds=total_solution_decode_seconds,
         total_discretization_seconds=sum(row['T_Disc'] for row in trial_timings),
         total_jax_to_numpy_seconds=initial_download + final_download + sum(row['T_J_Np'] for row in trial_timings),
         total_numpy_to_jax_seconds=initial_upload + sum(row['T_Np_J'] for row in trial_timings),
+        initial_jax_to_numpy_seconds=initial_download,
+        initial_numpy_to_jax_seconds=initial_upload,
         final_jax_to_numpy_seconds=final_download,
         compilation_seconds=compilation,
         total_scp_seconds=time.perf_counter() - call_started - compilation,

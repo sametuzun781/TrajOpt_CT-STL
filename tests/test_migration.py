@@ -36,6 +36,13 @@ def test_five_solvers_match_original_model(example):
         try:
             set_parameters(problem, **values)
             _, x, u, s, nu = problem.solve()
+            # Native solutions are passed straight to the compiled decoder.
+            # They must remain independent of the next native solver update.
+            saved = tuple(np.array(a) for a in (x, u, s, nu))
+            problem.solve()
+            for actual, expected in zip((x, u, s, nu), saved):
+                np.testing.assert_array_equal(np.asarray(actual), expected)
+            assert problem.records[-1]['solution_decode_seconds'] >= 0.
             if backend == 'jax_icore':
                 assert all(isinstance(a, jax.Array) for a in problem.solver.last_model)
                 assert problem.records[-1]['jax_to_numpy_seconds'] == 0.
